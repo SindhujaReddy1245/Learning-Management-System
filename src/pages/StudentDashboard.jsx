@@ -363,8 +363,13 @@ const StudentDashboard = ({
       {renderHeader()}
 
       <div className="dashboard-wrapper">
+        {/* Page Section Title */}
+        <h1 style={{ fontSize: "1.8rem", fontWeight: 800, color: "var(--title)", marginBottom: "1.5rem", textAlign: "left" }}>
+          Student Dashboard
+        </h1>
+
         {/* Top Info Bar */}
-        <div className="dashboard-nav-bar">
+        <div className="dashboard-nav-bar" style={{ marginTop: 0 }}>
           <div className="dashboard-user-info">
             <div className="user-avatar">S</div>
             <div className="user-details">
