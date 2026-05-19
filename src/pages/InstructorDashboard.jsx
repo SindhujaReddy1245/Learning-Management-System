@@ -351,12 +351,17 @@ const InstructorDashboard = ({
       {renderHeader()}
 
       <div className="dashboard-wrapper">
+        {/* Page Section Title */}
+        <h1 style={{ fontSize: "2.2rem", fontWeight: 900, color: "var(--title)", marginBottom: "1.5rem", textAlign: "left", letterSpacing: "-0.02em" }}>
+          Instructor Workstation
+        </h1>
+
         {/* Top Navbar */}
-        <div className="dashboard-nav-bar">
+        <div className="dashboard-nav-bar" style={{ marginTop: 0 }}>
           <div className="dashboard-user-info">
             <div className="user-avatar instructor-avatar">I</div>
             <div className="user-details">
-              <h2>Instructor Workstation</h2>
+              <h2>Welcome Back, Instructor</h2>
               <span>Logged in as: {user.email} (Instructor)</span>
             </div>
           </div>
