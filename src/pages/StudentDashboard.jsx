@@ -163,6 +163,7 @@ const StudentDashboard = ({
       showToast("No quiz available for this course yet.", "success");
       return;
     }
+    setActiveCourseId(courseId);
     setQuizAnswers({});
     setCurrentQuizQuestion(0);
     setQuizActive(true);
@@ -595,26 +596,26 @@ const StudentDashboard = ({
                             </div>
                           </div>
                           
-                          {/* As per previous instruction, card footer navigation buttons themselves are disabled */}
-                          <div className="course-card-footer" style={{ display: "flex", flexDirection: "column", gap: "0.5rem", width: "100%" }}>
+                          {/* Fully implemented active workspace action buttons */}
+                          <div className="course-card-footer" style={{ display: "flex", flexDirection: "row", gap: "0.75rem", width: "100%" }}>
                             <button
                               className="course-card-btn study"
                               type="button"
-                              disabled
-                              style={{ width: "100%", height: "2.5rem", opacity: 0.6, cursor: "not-allowed" }}
+                              style={{ flex: 1, height: "2.6rem", background: "var(--panel-soft)", border: "1px solid var(--line)", color: "var(--text)" }}
+                              onClick={() => showToast("Simply scroll up to complete individual video lessons in your playlist!", "success")}
                             >
                               <Play size={14} fill="currentColor" />
-                              View the Videos
+                              <span>View Videos</span>
                             </button>
 
                             <button
                               className="course-card-btn enroll"
                               type="button"
-                              disabled
-                              style={{ width: "100%", height: "2.5rem", background: "var(--panel-soft)", border: "1px solid var(--line)", color: "var(--text)", opacity: 0.6, cursor: "not-allowed" }}
+                              style={{ flex: 1, height: "2.6rem", background: "var(--purple)", color: "white", border: "none" }}
+                              onClick={() => startQuiz(c.id)}
                             >
                               <ClipboardCheck size={14} />
-                              Take Quizzes
+                              <span>Take Quiz</span>
                             </button>
                           </div>
                         </article>

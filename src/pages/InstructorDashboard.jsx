@@ -495,35 +495,15 @@ const InstructorDashboard = ({
                       </div>
                     </div>
                     
-                    {/* Visual representations & disabled actions in card footer */}
+                    {/* Fully implemented active instructor workspace action */}
                     <div className="course-card-footer" style={{ display: "flex", flexDirection: "column", gap: "0.5rem", width: "100%" }}>
                       <button
                         className="course-card-btn study"
                         type="button"
-                        disabled
-                        style={{ width: "100%", height: "2.5rem", opacity: 0.6, cursor: "not-allowed" }}
+                        style={{ width: "100%", height: "2.6rem", background: "var(--purple)", color: "white", border: "none" }}
+                        onClick={() => setInstructorSelectedCourseId(c.id)}
                       >
-                        <Play size={14} fill="currentColor" />
-                        View the Videos
-                      </button>
-
-                      <button
-                        className="course-card-btn enroll"
-                        type="button"
-                        disabled
-                        style={{ width: "100%", height: "2.5rem", background: "var(--panel-soft)", border: "1px solid var(--line)", color: "var(--text)", opacity: 0.6, cursor: "not-allowed" }}
-                      >
-                        <ClipboardCheck size={14} />
-                        Take Quizzes
-                      </button>
-
-                      <button
-                        className="course-card-btn study"
-                        type="button"
-                        disabled
-                        style={{ width: "100%", height: "2.5rem", opacity: 0.6, cursor: "not-allowed" }}
-                      >
-                        Course Workspace Details
+                        <span>Manage & View Course Details</span>
                         <ChevronRight size={14} />
                       </button>
                     </div>
