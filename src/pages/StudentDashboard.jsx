@@ -163,7 +163,6 @@ const StudentDashboard = ({
       showToast("No quiz available for this course yet.", "success");
       return;
     }
-    setActiveCourseId(courseId);
     setQuizAnswers({});
     setCurrentQuizQuestion(0);
     setQuizActive(true);
@@ -595,27 +594,27 @@ const StudentDashboard = ({
                               )}
                             </div>
                           </div>
-                          
-                          {/* Fully implemented active workspace action buttons */}
-                          <div className="course-card-footer" style={{ display: "flex", flexDirection: "row", gap: "0.75rem", width: "100%" }}>
+
+                          {/* As per previous instruction, card footer navigation buttons themselves are disabled */}
+                          <div className="course-card-footer" style={{ display: "flex", flexDirection: "column", gap: "0.5rem", width: "100%" }}>
                             <button
                               className="course-card-btn study"
                               type="button"
-                              style={{ flex: 1, height: "2.6rem", background: "var(--panel-soft)", border: "1px solid var(--line)", color: "var(--text)" }}
-                              onClick={() => showToast("Simply scroll up to complete individual video lessons in your playlist!", "success")}
+                              disabled
+                              style={{ width: "100%", height: "2.5rem", opacity: 0.6, cursor: "not-allowed" }}
                             >
                               <Play size={14} fill="currentColor" />
-                              <span>View Videos</span>
+                              View the Videos
                             </button>
 
                             <button
                               className="course-card-btn enroll"
                               type="button"
-                              style={{ flex: 1, height: "2.6rem", background: "var(--purple)", color: "white", border: "none" }}
-                              onClick={() => startQuiz(c.id)}
+                              disabled
+                              style={{ width: "100%", height: "2.5rem", background: "var(--panel-soft)", border: "1px solid var(--line)", color: "var(--text)", opacity: 0.6, cursor: "not-allowed" }}
                             >
                               <ClipboardCheck size={14} />
-                              <span>Take Quiz</span>
+                              Take Quizzes
                             </button>
                           </div>
                         </article>
@@ -628,71 +627,8 @@ const StudentDashboard = ({
 
             {/* Tab: Browse Courses catalog */}
             {studentTab === "browse" && (
-              <div>
-                <h3 style={{ textAlign: "left", fontSize: "1.25rem", marginBottom: "1rem", color: "var(--title)" }}>Explore Courses Catalog</h3>
-                <div className="courses-grid-lms">
-                  {courses.map((c, index) => {
-                    const isEnrolled = enrollments.some(
-                      (e) => e.courseId === c.id && e.studentEmail === user.email
-                    );
-                    const courseVideosCount = videos.filter((v) => v.courseId === c.id).length;
-                    return (
-                      <article className="course-card-lms" key={c.id}>
-                        <div className={`course-card-banner tone-${(index % 4) + 1}`}>
-                          <span className="course-category-tag">{c.category}</span>
-                          <span style={{ fontSize: "0.8rem", fontWeight: 800 }}>{c.level}</span>
-                        </div>
-                        <div className="course-card-body">
-                          <h3>{c.title}</h3>
-                          <p>{c.description}</p>
-
-                          <div className="course-meta-row" style={{ border: "none", paddingTop: 0 }}>
-                            <div className="course-meta-item">
-                              <Users size={14} />
-                              <span>{c.learnersCount || index * 8 + 12} Enrolled</span>
-                            </div>
-                            <div className="course-meta-item">
-                              <Star size={14} fill="currentColor" style={{ color: "var(--orange)" }} />
-                              <span>{c.rating} ({index * 4 + 8} ratings)</span>
-                            </div>
-                          </div>
-
-                          <div className="course-meta-row">
-                            <div className="course-meta-item">
-                              <Tv size={14} />
-                              <span>{courseVideosCount} Lessons</span>
-                            </div>
-                            <div className="course-meta-item">
-                              <Award size={14} />
-                              <span>{quizzes.some(q => q.courseId === c.id) ? "Quiz Studio" : "No Quiz"}</span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="course-card-footer">
-                          {isEnrolled ? (
-                            <button
-                              className="course-card-btn enrolled-badge"
-                              type="button"
-                              disabled
-                            >
-                              <Check size={14} />
-                              Enrolled
-                            </button>
-                          ) : (
-                            <button
-                              className="course-card-btn enroll"
-                              type="button"
-                              onClick={() => enrollInCourse(c.id)}
-                            >
-                              <Plus size={14} />
-                              Enroll in Course
-                            </button>
-                          )}
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
+              <div style={{ padding: "3rem", textAlign: "center", color: "var(--muted)", border: "1px dashed var(--line)", borderRadius: "1rem" }}>
+                Empty
               </div>
             )}
           </>
