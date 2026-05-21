@@ -14,11 +14,12 @@ services:
         sync: false # You can enter your database connection URL in Render's dashboard
 
   # Vite React Frontend (Static Site)
-  - type: static
+  - type: web
     name: lms-frontend
+    runtime: static
     rootDir: frontend
     buildCommand: npm install && npm run build
-    publishDir: dist
+    staticPublishPath: dist
     buildFilter:
       paths:
         - "frontend/**"
