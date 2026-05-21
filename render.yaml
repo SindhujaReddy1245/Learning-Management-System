@@ -1,0 +1,24 @@
+services:
+  # Python FastAPI Backend
+  - type: web
+    name: lms-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    buildFilter:
+      paths:
+        - "backend/**"
+    envVars:
+      - key: DATABASE_URL
+        sync: false # You can enter your database connection URL in Render's dashboard
+
+  # Vite React Frontend (Static Site)
+  - type: static
+    name: lms-frontend
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    publishDir: dist
+    buildFilter:
+      paths:
+        - "frontend/**"
