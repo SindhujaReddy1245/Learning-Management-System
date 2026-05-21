@@ -13,9 +13,17 @@ import {
   Moon,
   LogOut,
   Star,
-  GraduationCap
+  GraduationCap,
+  FileText,
+  Eye,
+  Upload,
 } from "lucide-react";
-import { createCourse } from "../api";
+import {
+  createCourse,
+  getApiBaseUrl,
+  getCoursePdfPreviewUrl,
+  uploadCoursePdf,
+} from "../api";
 
 const InstructorDashboard = ({
   user,
@@ -27,6 +35,8 @@ const InstructorDashboard = ({
   setQuizzes,
   enrolledStudents,
   setEnrolledStudents,
+  coursePdfs,
+  setCoursePdfs,
   showToast,
   handleLogout,
   isDark,
@@ -45,6 +55,7 @@ const InstructorDashboard = ({
   const [newCourseDuration, setNewCourseDuration] = useState("5 hours");
   const [newCourseDetails, setNewCourseDetails] = useState("");
   const [isCreatingCourse, setIsCreatingCourse] = useState(false);
+  const [uploadingPdfCourseId, setUploadingPdfCourseId] = useState(null);
 
   // Form states - Add Video
   const [newVideoCourseId, setNewVideoCourseId] = useState("");
@@ -124,10 +135,11 @@ const InstructorDashboard = ({
       setIsCreatingCourse(true);
       const savedCourse = await createCourse(coursePayload);
       setCourses((prev) => [...prev, savedCourse]);
+      showToast("Course created successfully!", "success");
     } catch (error) {
       console.error(error);
       setCourses((prev) => [...prev, fallbackCourse]);
-      showToast("Backend is offline, course saved locally for now.", "success");
+      showToast(`Could not reach backend (${getApiBaseUrl()}). Course saved locally.`, "success");
     } finally {
       setIsCreatingCourse(false);
     }
@@ -140,7 +152,6 @@ const InstructorDashboard = ({
     setNewCourseDuration("5 hours");
     setNewCourseDetails("");
 
-    showToast("Course created successfully!", "success");
     setInstructorTab("manage-courses");
   };
 
@@ -248,6 +259,30 @@ const InstructorDashboard = ({
     setInstructorTab("manage-courses");
   };
 
+  const handleUploadCoursePdf = async (courseId, file) => {
+    if (!file) return;
+
+    if (file.type !== "application/pdf") {
+      showToast("Please upload a PDF file.", "success");
+      return;
+    }
+
+    try {
+      setUploadingPdfCourseId(courseId);
+      const savedPdf = await uploadCoursePdf(courseId, file);
+      setCoursePdfs((prev) => ({
+        ...prev,
+        [courseId]: [savedPdf, ...(prev[courseId] || [])],
+      }));
+      showToast("PDF uploaded successfully!", "success");
+    } catch (error) {
+      console.error(error);
+      showToast(`PDF upload failed: ${error.message}`, "success");
+    } finally {
+      setUploadingPdfCourseId(null);
+    }
+  };
+
   // Header render
   const renderHeader = () => {
     return (
@@ -287,6 +322,7 @@ const InstructorDashboard = ({
     const courseVideos = videos.filter((v) => v.courseId === instructorSelectedCourseId);
     const courseQuiz = quizzes.find((q) => q.courseId === instructorSelectedCourseId);
     const courseEnrolls = enrolledStudents.filter((s) => s.courseId === instructorSelectedCourseId);
+    const pdfs = coursePdfs[instructorSelectedCourseId] || [];
 
     return (
       <div>
@@ -354,6 +390,54 @@ const InstructorDashboard = ({
                   <div key={idx} className="instructor-detail-item">
                     <span>{s.name} ({s.email})</span>
                     <strong>{s.progress}%</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="instructor-detail-card">
+            <h4>Course PDF Materials ({pdfs.length})</h4>
+            <label className="course-pdf-upload-btn" htmlFor={`course-pdf-${instructorSelectedCourseId}`}>
+              <Upload size={15} />
+              {uploadingPdfCourseId === instructorSelectedCourseId ? "Uploading..." : "Upload PDF"}
+            </label>
+            <input
+              id={`course-pdf-${instructorSelectedCourseId}`}
+              type="file"
+              accept="application/pdf"
+              style={{ display: "none" }}
+              disabled={uploadingPdfCourseId === instructorSelectedCourseId}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                handleUploadCoursePdf(instructorSelectedCourseId, file);
+                event.target.value = "";
+              }}
+            />
+
+            {pdfs.length === 0 ? (
+              <span style={{ color: "var(--muted)", fontSize: "0.88rem", marginTop: "0.75rem", display: "block" }}>
+                No PDF materials uploaded yet.
+              </span>
+            ) : (
+              <div className="instructor-detail-list" style={{ marginTop: "0.75rem" }}>
+                {pdfs.map((pdf) => (
+                  <div key={pdf.id} className="instructor-detail-item">
+                    <span style={{ display: "flex", alignItems: "center", gap: "0.35rem", minWidth: 0 }}>
+                      <FileText size={14} />
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {pdf.filename}
+                      </span>
+                    </span>
+                    <a
+                      className="course-pdf-link"
+                      href={getCoursePdfPreviewUrl(instructorSelectedCourseId, pdf.id)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <Eye size={14} />
+                      Preview
+                    </a>
                   </div>
                 ))}
               </div>

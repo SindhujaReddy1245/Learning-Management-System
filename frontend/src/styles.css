@@ -1422,6 +1422,37 @@ h3 {
   cursor: not-allowed;
 }
 
+.course-pdf-upload-btn,
+.course-pdf-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 2rem;
+  padding: 0.4rem 0.65rem;
+  border-radius: 0.45rem;
+  border: 1px solid var(--line);
+  background: var(--panel-soft);
+  color: var(--title);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.course-pdf-upload-btn {
+  margin-top: 0.25rem;
+  color: #fff;
+  background: var(--purple);
+  border-color: transparent;
+}
+
+.course-pdf-link:hover {
+  border-color: rgba(124, 92, 255, 0.55);
+  color: var(--purple);
+}
+
 /* Study Classroom View */
 .classroom-header {
   display: flex;

@@ -30,7 +30,7 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { auth, db } from "./firebaseConfig";
-import { getCourses } from "./api";
+import { getCourses, getCoursePdfs } from "./api";
 
 // Standalone pages
 import Login from "./pages/Login";
@@ -307,6 +307,11 @@ function App() {
     };
   });
 
+  const [coursePdfs, setCoursePdfs] = useState(() => {
+    const saved = localStorage.getItem("lms_course_pdfs");
+    return saved ? JSON.parse(saved) : {};
+  });
+
   // ==========================================
   // SYNC PERSISTENCE EFFECTS
   // ==========================================
@@ -358,6 +363,24 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const backendCourses = courses.filter((course) => !String(course.id).startsWith("c_") && !["c1", "c2", "c3"].includes(course.id));
+    if (backendCourses.length === 0) return;
+
+    Promise.all(
+      backendCourses.map((course) =>
+        getCoursePdfs(course.id)
+          .then((pdfs) => [course.id, pdfs])
+          .catch(() => [course.id, coursePdfs[course.id] || []])
+      )
+    ).then((entries) => {
+      setCoursePdfs((prev) => ({
+        ...prev,
+        ...Object.fromEntries(entries),
+      }));
+    });
+  }, [courses]);
+
+  useEffect(() => {
     localStorage.setItem("lms_courses", JSON.stringify(courses));
   }, [courses]);
 
@@ -380,6 +403,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem("lms_progress", JSON.stringify(progress));
   }, [progress]);
+
+  useEffect(() => {
+    localStorage.setItem("lms_course_pdfs", JSON.stringify(coursePdfs));
+  }, [coursePdfs]);
 
   // ==========================================
   // CORE HANDLERS
@@ -695,6 +722,7 @@ function App() {
                 setEnrolledStudents={setEnrolledStudents}
                 progress={progress}
                 setProgress={setProgress}
+                coursePdfs={coursePdfs}
                 showToast={showToast}
                 handleLogout={handleLogout}
                 isDark={isDark}
@@ -719,6 +747,8 @@ function App() {
                 setQuizzes={setQuizzes}
                 enrolledStudents={enrolledStudents}
                 setEnrolledStudents={setEnrolledStudents}
+                coursePdfs={coursePdfs}
+                setCoursePdfs={setCoursePdfs}
                 showToast={showToast}
                 handleLogout={handleLogout}
                 isDark={isDark}

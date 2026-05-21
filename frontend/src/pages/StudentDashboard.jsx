@@ -18,8 +18,12 @@ import {
   LogOut,
   Star,
   GraduationCap,
-  Search
+  Search,
+  FileText,
+  Eye,
+  Download,
 } from "lucide-react";
+import { getCoursePdfDownloadUrl, getCoursePdfPreviewUrl } from "../api";
 
 const StudentDashboard = ({
   user,
@@ -32,6 +36,7 @@ const StudentDashboard = ({
   setEnrolledStudents,
   progress,
   setProgress,
+  coursePdfs,
   showToast,
   handleLogout,
   isDark,
@@ -505,6 +510,7 @@ const StudentDashboard = ({
                   <div className="courses-grid-lms">
                     {studentEnrolledCourses.map((c, index) => {
                       const courseProg = getCourseProgress(user.email, c.id);
+                      const pdfs = coursePdfs[c.id] || [];
                       return (
                         <article className="course-card-lms" key={c.id}>
                           <div className={`course-card-banner tone-${(index % 4) + 1}`}>
@@ -534,6 +540,51 @@ const StudentDashboard = ({
                                 <Award size={14} />
                                 <span>{quizzes.some(q => q.courseId === c.id) ? "1 Quiz" : "No Quiz"}</span>
                               </div>
+                            </div>
+
+                            <div className="expanded-videos-list" style={{ marginTop: "1.25rem", borderTop: "1px solid var(--line)", paddingTop: "1rem", display: "flex", flexDirection: "column", gap: "0.6rem", width: "100%" }}>
+                              <h4 style={{ fontSize: "0.88rem", color: "var(--title)", display: "flex", alignItems: "center", gap: "0.4rem", fontWeight: 700, margin: "0 0 0.25rem" }}>
+                                <FileText size={14} />
+                                <span>Course PDFs</span>
+                              </h4>
+                              {pdfs.length === 0 ? (
+                                <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>No PDF materials uploaded yet.</span>
+                              ) : (
+                                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", width: "100%" }}>
+                                  {pdfs.map((pdf) => (
+                                    <div
+                                      key={pdf.id}
+                                      style={{
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "center",
+                                        gap: "0.65rem",
+                                        background: "var(--panel-soft)",
+                                        padding: "0.6rem 0.8rem",
+                                        borderRadius: "0.5rem",
+                                        border: "1px solid var(--line)",
+                                        width: "100%",
+                                        boxSizing: "border-box"
+                                      }}
+                                    >
+                                      <span style={{ display: "flex", alignItems: "center", gap: "0.35rem", minWidth: 0, fontSize: "0.82rem", color: "var(--title)", fontWeight: 700 }}>
+                                        <FileText size={14} />
+                                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pdf.filename}</span>
+                                      </span>
+                                      <span style={{ display: "flex", gap: "0.45rem", flexShrink: 0 }}>
+                                        <a className="course-pdf-link" href={getCoursePdfPreviewUrl(c.id, pdf.id)} target="_blank" rel="noreferrer">
+                                          <Eye size={14} />
+                                          Preview
+                                        </a>
+                                        <a className="course-pdf-link" href={getCoursePdfDownloadUrl(c.id, pdf.id)}>
+                                          <Download size={14} />
+                                          Download
+                                        </a>
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
 
                             {/* Standard lessons playlist (still accessible directly on card in dashboard per user design) */}

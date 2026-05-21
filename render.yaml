@@ -12,6 +12,10 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false # You can enter your database connection URL in Render's dashboard
+      - key: FRONTEND_URL
+        sync: false # Example: https://your-frontend.vercel.app
+      - key: ALLOWED_ORIGINS
+        sync: false # Optional comma-separated list of frontend origins
 
   # Vite React Frontend (Static Site)
   - type: web

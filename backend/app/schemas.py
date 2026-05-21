@@ -17,3 +17,12 @@ class CourseOut(CourseCreate):
     lessonsCount: int = 0
     rating: str = "5.0"
     learnersCount: int = 0
+
+
+class CoursePdfOut(BaseModel):
+    id: str
+    courseId: str
+    filename: str
+    contentType: str = "application/pdf"
+    sizeBytes: int
+    uploadedAt: str
