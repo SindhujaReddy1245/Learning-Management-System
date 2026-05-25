@@ -23,6 +23,7 @@ import {
   getApiBaseUrl,
   getCoursePdfPreviewUrl,
   uploadCoursePdf,
+  saveCourseQuiz,
 } from "../api";
 
 const InstructorDashboard = ({
@@ -80,6 +81,14 @@ const InstructorDashboard = ({
   const [quizQ2Opt3, setQuizQ2Opt3] = useState("");
   const [quizQ2Opt4, setQuizQ2Opt4] = useState("");
   const [quizQ2Correct, setQuizQ2Correct] = useState(0);
+
+  // Dynamic Quiz Creator States
+  const [activeQuizCourse, setActiveQuizCourse] = useState(null);
+  const [dynamicQuizTitle, setDynamicQuizTitle] = useState("");
+  const [dynamicQuestions, setDynamicQuestions] = useState([
+    { question: "", options: ["", "", "", ""], correctAnswer: 0 }
+  ]);
+  const [isSavingQuiz, setIsSavingQuiz] = useState(false);
 
   // Set default course options in instructor dropdowns when course list changes
   useEffect(() => {
@@ -259,6 +268,117 @@ const InstructorDashboard = ({
     setInstructorTab("manage-courses");
   };
 
+  const handleSelectCourseForQuiz = (course) => {
+    setActiveQuizCourse(course);
+    const existing = quizzes.find(q => q.courseId === course.id);
+    if (existing) {
+      setDynamicQuizTitle(existing.title || "");
+      setDynamicQuestions(existing.questions || [{ question: "", options: ["", "", "", ""], correctAnswer: 0 }]);
+    } else {
+      setDynamicQuizTitle(course.title + " Quiz");
+      setDynamicQuestions([{ question: "", options: ["", "", "", ""], correctAnswer: 0 }]);
+    }
+  };
+
+  const handleAddQuestion = () => {
+    setDynamicQuestions(prev => [...prev, { question: "", options: ["", "", "", ""], correctAnswer: 0 }]);
+  };
+
+  const handleQuestionChange = (index, field, value) => {
+    setDynamicQuestions(prev => prev.map((q, idx) => {
+      if (idx === index) {
+        return { ...q, [field]: value };
+      }
+      return q;
+    }));
+  };
+
+  const handleOptionChange = (qIndex, oIndex, value) => {
+    setDynamicQuestions(prev => prev.map((q, idx) => {
+      if (idx === qIndex) {
+        const newOpts = [...q.options];
+        newOpts[oIndex] = value;
+        return { ...q, options: newOpts };
+      }
+      return q;
+    }));
+  };
+
+  const handleDeleteQuestion = (index) => {
+    setDynamicQuestions(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleSaveDynamicQuiz = async (e) => {
+    e.preventDefault();
+    if (!activeQuizCourse) return;
+    if (!dynamicQuizTitle.trim()) {
+      showToast("Please enter a quiz title", "success");
+      return;
+    }
+
+    // Validate that questions are filled out
+    for (let i = 0; i < dynamicQuestions.length; i++) {
+      const q = dynamicQuestions[i];
+      if (!q.question.trim()) {
+        showToast(`Please enter question text for Question ${i + 1}`, "success");
+        return;
+      }
+      for (let j = 0; j < q.options.length; j++) {
+        if (!q.options[j].trim()) {
+          showToast(`Please fill Option ${String.fromCharCode(65 + j)} for Question ${i + 1}`, "success");
+          return;
+        }
+      }
+    }
+
+    const payload = {
+      title: dynamicQuizTitle,
+      questions: dynamicQuestions.map(q => ({
+        question: q.question.trim(),
+        options: q.options.map(opt => opt.trim()),
+        correctAnswer: parseInt(q.correctAnswer)
+      }))
+    };
+
+    const isMockCourse = String(activeQuizCourse.id).startsWith("c_") || ["c1", "c2", "c3"].includes(activeQuizCourse.id);
+
+    try {
+      setIsSavingQuiz(true);
+      let savedQuiz;
+      if (isMockCourse) {
+        savedQuiz = {
+          id: "q_" + Date.now(),
+          courseId: activeQuizCourse.id,
+          ...payload
+        };
+        setQuizzes((prev) => {
+          const copy = [...prev];
+          const idx = copy.findIndex((q) => q.courseId === activeQuizCourse.id);
+          if (idx >= 0) copy[idx] = savedQuiz;
+          else copy.push(savedQuiz);
+          return copy;
+        });
+        showToast("Quiz updated successfully in local session!", "success");
+      } else {
+        savedQuiz = await saveCourseQuiz(activeQuizCourse.id, payload);
+        setQuizzes((prev) => {
+          const copy = [...prev];
+          const idx = copy.findIndex((q) => q.courseId === activeQuizCourse.id);
+          if (idx >= 0) copy[idx] = savedQuiz;
+          else copy.push(savedQuiz);
+          return copy;
+        });
+        showToast("Quiz saved to database successfully!", "success");
+      }
+      setActiveQuizCourse(null);
+    } catch (err) {
+      console.error(err);
+      showToast(`Failed to save quiz: ${err.message}`, "error");
+    } finally {
+      setIsSavingQuiz(false);
+    }
+  };
+
   const handleUploadCoursePdf = async (courseId, file) => {
     if (!file) return;
 
@@ -277,7 +397,7 @@ const InstructorDashboard = ({
       showToast("PDF uploaded successfully!", "success");
     } catch (error) {
       console.error(error);
-      showToast(`PDF upload failed: ${error.message}`, "success");
+      showToast(`PDF upload failed: ${error.message}`, "error");
     } finally {
       setUploadingPdfCourseId(null);
     }
@@ -708,8 +828,155 @@ const InstructorDashboard = ({
 
         {/* Tab: Add Quiz */}
         {instructorTab === "add-quiz" && (
-          <div className="form-dashboard-card" style={{ maxWidth: "42rem", textAlign: "center", padding: "3rem", color: "var(--muted)", border: "1px dashed var(--line)" }}>
-            Empty
+          <div style={{ width: "100%" }}>
+            {!activeQuizCourse ? (
+              <div className="form-dashboard-card" style={{ maxWidth: "100%", width: "100%", boxSizing: "border-box" }}>
+                <h3 style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>Select Course to Add/Manage Quiz</h3>
+                <p style={{ color: "var(--muted)", marginBottom: "2rem" }}>Select one of your courses below to configure its challenge assessment.</p>
+                
+                {courses.filter(c => c.instructorId === user.uid || c.instructor === user.email).length === 0 ? (
+                  <div style={{ padding: "3rem", textAlign: "center", color: "var(--muted)", border: "1px dashed var(--line)", borderRadius: "1rem" }}>
+                    You have not added any courses yet. Please create a course first.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                    {courses.filter(c => c.instructorId === user.uid || c.instructor === user.email).map((course) => {
+                      const hasQuiz = quizzes.some(q => q.courseId === course.id);
+                      return (
+                        <div key={course.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "1.25rem", border: "1px solid var(--line)", borderRadius: "0.75rem", background: "var(--panel-soft)" }}>
+                          <div style={{ textAlign: "left" }}>
+                            <h4 style={{ margin: 0, fontSize: "1.1rem", color: "var(--title)" }}>{course.title}</h4>
+                            <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>Category: {course.category} • Level: {course.level}</span>
+                          </div>
+                          <button
+                            className="primary-button"
+                            type="button"
+                            onClick={() => handleSelectCourseForQuiz(course)}
+                            style={{ minWidth: "8rem", padding: "0.6rem 1rem", fontSize: "0.85rem", height: "fit-content", background: hasQuiz ? "var(--panel)" : "var(--purple)", border: hasQuiz ? "1px solid var(--line)" : "none", color: hasQuiz ? "var(--text)" : "white" }}
+                          >
+                            {hasQuiz ? "Edit Quiz" : "Add Quiz"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <form className="form-dashboard-card" onSubmit={handleSaveDynamicQuiz} style={{ maxWidth: "46rem", margin: "0 auto", textAlign: "left" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
+                  <button
+                    type="button"
+                    onClick={() => setActiveQuizCourse(null)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text)", padding: 0 }}
+                  >
+                    <ChevronLeft size={20} />
+                  </button>
+                  <h3 style={{ margin: 0 }}>Configure Quiz for: {activeQuizCourse.title}</h3>
+                </div>
+                <p style={{ color: "var(--muted)", marginBottom: "1.5rem" }}>Specify the quiz name, add multiple-choice questions, options, and assign correct answers.</p>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="quiz-title-input">Quiz Title</label>
+                  <input
+                    id="quiz-title-input"
+                    className="form-input"
+                    value={dynamicQuizTitle}
+                    onChange={(e) => setDynamicQuizTitle(e.target.value)}
+                    placeholder="Example: Final Course Assessment"
+                  />
+                </div>
+
+                <div style={{ marginTop: "2rem" }}>
+                  <h4 style={{ fontSize: "1.15rem", marginBottom: "1rem", color: "var(--title)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>Questions ({dynamicQuestions.length})</span>
+                    <button
+                      type="button"
+                      onClick={handleAddQuestion}
+                      style={{ background: "var(--purple)", color: "white", border: "none", padding: "0.4rem 0.8rem", borderRadius: "0.4rem", fontSize: "0.78rem", fontWeight: 700, cursor: "pointer" }}
+                    >
+                      + Add Question
+                    </button>
+                  </h4>
+
+                  {dynamicQuestions.map((q, idx) => (
+                    <div key={idx} style={{ padding: "1.5rem", border: "1px solid var(--line)", borderRadius: "0.75rem", background: "var(--panel-soft)", marginBottom: "1.5rem", position: "relative" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                        <span style={{ fontWeight: 800, color: "var(--purple)", fontSize: "0.95rem" }}>Question {idx + 1}</span>
+                        {dynamicQuestions.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteQuestion(idx)}
+                            style={{ background: "none", border: "none", color: "#ef4444", fontSize: "0.8rem", cursor: "pointer", fontWeight: 600 }}
+                          >
+                            Delete Question
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label" htmlFor={`q-text-${idx}`}>Question Text</label>
+                        <input
+                          id={`q-text-${idx}`}
+                          className="form-input"
+                          value={q.question}
+                          onChange={(e) => handleQuestionChange(idx, "question", e.target.value)}
+                          placeholder="Example: Which of these is a standard React hook?"
+                        />
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginTop: "1rem" }}>
+                        {q.options.map((opt, oIdx) => (
+                          <div className="form-group" key={oIdx} style={{ margin: 0 }}>
+                            <label className="form-label" htmlFor={`q-${idx}-opt-${oIdx}`}>Option {String.fromCharCode(65 + oIdx)}</label>
+                            <input
+                              id={`q-${idx}-opt-${oIdx}`}
+                              className="form-input"
+                              value={opt}
+                              onChange={(e) => handleOptionChange(idx, oIdx, e.target.value)}
+                              placeholder={`Option ${String.fromCharCode(65 + oIdx)}`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="form-group" style={{ marginTop: "1.25rem", marginBottom: 0 }}>
+                        <label className="form-label" htmlFor={`q-correct-${idx}`}>Select Correct Option</label>
+                        <select
+                          id={`q-correct-${idx}`}
+                          className="form-select"
+                          value={q.correctAnswer}
+                          onChange={(e) => handleQuestionChange(idx, "correctAnswer", parseInt(e.target.value))}
+                        >
+                          <option value={0}>Option A</option>
+                          <option value={1}>Option B</option>
+                          <option value={2}>Option C</option>
+                          <option value={3}>Option D</option>
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: "flex", gap: "1rem", marginTop: "2rem" }}>
+                  <button
+                    className="submit-btn"
+                    type="submit"
+                    disabled={isSavingQuiz}
+                    style={{ margin: 0, flex: 1, background: "var(--purple)", color: "white" }}
+                  >
+                    {isSavingQuiz ? "Saving..." : "Save Quiz to Database"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveQuizCourse(null)}
+                    style={{ flex: 1, background: "var(--panel-soft)", border: "1px solid var(--line)", color: "var(--text)", borderRadius: "0.5rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         )}
 

@@ -255,12 +255,19 @@ const StudentDashboard = ({
     const isLast = currentQuizQuestion === questions.length - 1;
     const currentQ = questions[currentQuizQuestion];
 
+    let correctCount = 0;
+    questions.forEach((q, idx) => {
+      if (quizAnswers[idx] === q.correctAnswer) {
+        correctCount += 1;
+      }
+    });
+
     return (
       <div className="quiz-container-lms">
         {quizFinished ? (
           <div className="quiz-results-card">
             <div className="quiz-results-score">
-              {progress[user.email]?.[activeCourseId]?.quizScore} / {questions.length}
+              {correctCount} / {questions.length}
             </div>
             <div className="quiz-results-title">Quiz Session Completed!</div>
             <p className="quiz-results-text">
@@ -670,11 +677,19 @@ const StudentDashboard = ({
                             <button
                               className="course-card-btn enroll"
                               type="button"
-                              disabled
-                              style={{ width: "100%", height: "2.5rem", background: "var(--panel-soft)", border: "1px solid var(--line)", color: "var(--text)", opacity: 0.6, cursor: "not-allowed" }}
+                              onClick={() => {
+                                const quiz = quizzes.find((q) => q.courseId === c.id);
+                                if (!quiz || quiz.questions.length === 0) {
+                                  showToast("No quiz available for this course yet.", "success");
+                                  return;
+                                }
+                                setActiveCourseId(c.id);
+                                startQuiz(c.id);
+                              }}
+                              style={{ width: "100%", height: "2.5rem", background: "var(--panel-soft)", border: "1px solid var(--line)", color: "var(--text)", cursor: "pointer" }}
                             >
                               <ClipboardCheck size={14} />
-                              Take Quizzes
+                              Take Quiz
                             </button>
                           </div>
                         </article>

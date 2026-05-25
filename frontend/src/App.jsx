@@ -30,7 +30,7 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { auth, db } from "./firebaseConfig";
-import { getCourses, getCoursePdfs } from "./api";
+import { getCourses, getCoursePdfs, getCourseQuiz } from "./api";
 
 // Standalone pages
 import Login from "./pages/Login";
@@ -377,6 +377,35 @@ function App() {
         ...prev,
         ...Object.fromEntries(entries),
       }));
+    });
+  }, [courses]);
+
+  useEffect(() => {
+    const backendCourses = courses.filter((course) => !String(course.id).startsWith("c_") && !["c1", "c2", "c3"].includes(course.id));
+    if (backendCourses.length === 0) return;
+
+    Promise.all(
+      backendCourses.map((course) =>
+        getCourseQuiz(course.id)
+          .then((quiz) => [course.id, quiz])
+          .catch(() => null)
+      )
+    ).then((results) => {
+      const activeQuizzes = results.filter(Boolean);
+      if (activeQuizzes.length > 0) {
+        setQuizzes((prev) => {
+          const copy = [...prev];
+          activeQuizzes.forEach(([courseId, quiz]) => {
+            const idx = copy.findIndex((q) => q.courseId === courseId);
+            if (idx >= 0) {
+              copy[idx] = quiz;
+            } else {
+              copy.push(quiz);
+            }
+          });
+          return copy;
+        });
+      }
     });
   }, [courses]);
 

@@ -69,3 +69,14 @@ export function getCoursePdfPreviewUrl(courseId, pdfId) {
 export function getCoursePdfDownloadUrl(courseId, pdfId) {
   return `${getCoursePdfPreviewUrl(courseId, pdfId)}?download=true`;
 }
+
+export function getCourseQuiz(courseId) {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/quizzes`);
+}
+
+export function saveCourseQuiz(courseId, quiz) {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/quizzes`, {
+    method: "POST",
+    body: JSON.stringify(quiz),
+  });
+}

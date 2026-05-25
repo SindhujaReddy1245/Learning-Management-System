@@ -4,6 +4,7 @@ import os
 
 from app.database import close_database, connect_database
 from app.routes.courses import router as courses_router
+from app.routes.quizzes import router as quizzes_router
 
 app = FastAPI(title="LearnFlow LMS API")
 
@@ -28,6 +29,7 @@ app.add_middleware(
 )
 
 app.include_router(courses_router, prefix="/api")
+app.include_router(quizzes_router, prefix="/api")
 
 @app.on_event("startup")
 async def startup() -> None:
