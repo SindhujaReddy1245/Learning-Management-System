@@ -24,7 +24,13 @@ async def connect_database() -> None:
         separator = "&" if "?" in database_url else "?"
         database_url = f"{database_url}{separator}sslmode=require"
 
-    database_pool = ConnectionPool(database_url, kwargs={"row_factory": dict_row}, open=True)
+    database_pool = ConnectionPool(
+        database_url,
+        kwargs={"row_factory": dict_row},
+        min_size=0,
+        max_size=2,
+        open=True,
+    )
 
 
 async def close_database() -> None:

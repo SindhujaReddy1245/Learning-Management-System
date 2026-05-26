@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   BookOpen,
   ClipboardCheck,
@@ -23,7 +23,17 @@ import {
   Eye,
   Download,
 } from "lucide-react";
-import { getCoursePdfDownloadUrl, getCoursePdfPreviewUrl } from "../api";
+import {
+  getCourseModules,
+  getCoursePdfDownloadUrl,
+  getCoursePdfPreviewUrl,
+  getModulePdfDownloadUrl,
+  getModulePdfPreviewUrl,
+  getModulePdfs,
+  getModuleQuiz,
+  getModuleQuizAttempts,
+  submitModuleQuizAttempt,
+} from "../api";
 
 const StudentDashboard = ({
   user,
@@ -53,24 +63,86 @@ const StudentDashboard = ({
   const [quizAnswers, setQuizAnswers] = useState({}); // { questionIndex: optionIndex }
   const [currentQuizQuestion, setCurrentQuizQuestion] = useState(0);
   const [courseSearch, setCourseSearch] = useState("");
+  const [courseModules, setCourseModules] = useState({});
+  const [modulePdfs, setModulePdfs] = useState({});
+  const [moduleQuizzes, setModuleQuizzes] = useState({});
+  const [moduleAttempts, setModuleAttempts] = useState({});
+  const [activeModuleQuizId, setActiveModuleQuizId] = useState(null);
+  const [moduleQuizAnswers, setModuleQuizAnswers] = useState({});
+
+  useEffect(() => {
+    const enrolledCourseIds = enrollments
+      .filter((enrollment) => enrollment.studentEmail === user.email)
+      .map((enrollment) => enrollment.courseId);
+
+    enrolledCourseIds.forEach((courseId) => {
+      getCourseModules(courseId)
+        .then((mods) => {
+          setCourseModules((prev) => ({ ...prev, [courseId]: mods }));
+        })
+        .catch(() => {
+          setCourseModules((prev) => ({ ...prev, [courseId]: prev[courseId] || [] }));
+        });
+    });
+  }, [enrollments, user.email]);
+
+  useEffect(() => {
+    const modules = Object.values(courseModules).flat();
+    modules.forEach((mod) => {
+      getModulePdfs(mod.id)
+        .then((pdfs) => {
+          setModulePdfs((prev) => ({ ...prev, [mod.id]: pdfs }));
+        })
+        .catch(() => {
+          setModulePdfs((prev) => ({ ...prev, [mod.id]: prev[mod.id] || [] }));
+        });
+
+      getModuleQuiz(mod.id)
+        .then((quiz) => {
+          setModuleQuizzes((prev) => ({ ...prev, [mod.id]: quiz }));
+        })
+        .catch(() => {
+          setModuleQuizzes((prev) => ({ ...prev, [mod.id]: null }));
+        });
+
+      getModuleQuizAttempts(mod.id, user.email)
+        .then((attempts) => {
+          setModuleAttempts((prev) => ({ ...prev, [mod.id]: attempts }));
+        })
+        .catch(() => {
+          setModuleAttempts((prev) => ({ ...prev, [mod.id]: prev[mod.id] || [] }));
+        });
+    });
+  }, [courseModules, user.email]);
 
   // Helper functions
   const getCourseProgress = (studentEmail, courseId) => {
     const courseVideos = videos.filter((v) => v.courseId === courseId);
     const totalVideos = courseVideos.length;
     const studentCourseProgress = progress[studentEmail]?.[courseId];
-    const watchedCount = studentCourseProgress?.watchedVideos?.length || 0;
+    const watchedVideoIds = new Set(studentCourseProgress?.watchedVideos || []);
+    const watchedCount = courseVideos.filter((video) => watchedVideoIds.has(video.id)).length;
+    const modules = courseModules[courseId] || [];
+    const modulePdfCount = modules.reduce((count, mod) => count + (modulePdfs[mod.id]?.length || 0), 0);
+    const viewedModulePdfIds = new Set(studentCourseProgress?.viewedModulePdfs || []);
+    const viewedModulePdfCount = modules.reduce(
+      (count, mod) => count + (modulePdfs[mod.id] || []).filter((pdf) => viewedModulePdfIds.has(pdf.id)).length,
+      0
+    );
+    const moduleQuizCount = modules.filter((mod) => moduleQuizzes[mod.id]).length;
+    const moduleQuizScores = studentCourseProgress?.moduleQuizScores || {};
+    const completedModuleQuizCount = modules.filter((mod) => moduleQuizzes[mod.id] && moduleQuizScores[mod.id] !== undefined).length;
 
     const courseQuiz = quizzes.find((q) => q.courseId === courseId);
     const hasQuiz = !!courseQuiz;
     const quizScore = studentCourseProgress?.quizScore;
     const quizCompleted = quizScore !== null && quizScore !== undefined;
 
-    const totalItems = totalVideos + (hasQuiz ? 1 : 0);
+    const totalItems = totalVideos + modulePdfCount + moduleQuizCount + (hasQuiz ? 1 : 0);
     if (totalItems === 0) return 0;
 
-    const completedItems = watchedCount + (quizCompleted ? 1 : 0);
-    return Math.round((completedItems / totalItems) * 100);
+    const completedItems = watchedCount + viewedModulePdfCount + completedModuleQuizCount + (quizCompleted ? 1 : 0);
+    return Math.min(100, Math.max(0, Math.round((completedItems / totalItems) * 100)));
   };
 
   const getStudentProgressStats = () => {
@@ -84,6 +156,7 @@ const StudentDashboard = ({
       const prog = progress[user.email]?.[e.courseId];
       if (prog) {
         if (prog.quizScore !== null) completedQuizzes += 1;
+        completedQuizzes += Object.keys(prog.moduleQuizScores || {}).length;
         watchedCount += prog.watchedVideos?.length || 0;
       }
     });
@@ -92,7 +165,7 @@ const StudentDashboard = ({
     studentEnrs.forEach((e) => {
       sumProgress += getCourseProgress(user.email, e.courseId);
     });
-    const avgProgress = totalEnrolled > 0 ? Math.round(sumProgress / totalEnrolled) : 0;
+    const avgProgress = totalEnrolled > 0 ? Math.min(100, Math.round(sumProgress / totalEnrolled)) : 0;
 
     return {
       totalEnrolled,
@@ -119,7 +192,7 @@ const StudentDashboard = ({
       const copy = { ...prev };
       if (!copy[user.email]) copy[user.email] = {};
       if (!copy[user.email][courseId]) {
-        copy[user.email][courseId] = { watchedVideos: [], quizScore: null };
+        copy[user.email][courseId] = { watchedVideos: [], quizScore: null, viewedModulePdfs: [], moduleQuizScores: {} };
       }
       return copy;
     });
@@ -140,7 +213,7 @@ const StudentDashboard = ({
       const copy = { ...prev };
       if (!copy[user.email]) copy[user.email] = {};
       if (!copy[user.email][courseId]) {
-        copy[user.email][courseId] = { watchedVideos: [], quizScore: null };
+        copy[user.email][courseId] = { watchedVideos: [], quizScore: null, viewedModulePdfs: [], moduleQuizScores: {} };
       }
 
       const watched = copy[user.email][courseId].watchedVideos || [];
@@ -162,6 +235,95 @@ const StudentDashboard = ({
     }, 50);
 
     showToast("Lesson completed! Progress updated.", "success");
+  };
+
+  const markModulePdfViewed = (courseId, pdfId) => {
+    setProgress((prev) => {
+      const copy = { ...prev };
+      if (!copy[user.email]) copy[user.email] = {};
+      if (!copy[user.email][courseId]) {
+        copy[user.email][courseId] = { watchedVideos: [], quizScore: null, viewedModulePdfs: [], moduleQuizScores: {} };
+      }
+
+      const viewed = copy[user.email][courseId].viewedModulePdfs || [];
+      if (!viewed.includes(pdfId)) {
+        copy[user.email][courseId].viewedModulePdfs = [...viewed, pdfId];
+      }
+      return copy;
+    });
+
+    setTimeout(() => {
+      setEnrolledStudents((prev) =>
+        prev.map((s) => {
+          if (s.email === user.email && s.courseId === courseId) {
+            return { ...s, progress: getCourseProgress(user.email, courseId) };
+          }
+          return s;
+        })
+      );
+    }, 50);
+  };
+
+  const startModuleQuiz = (moduleId) => {
+    const quiz = moduleQuizzes[moduleId];
+    if (!quiz || quiz.questions.length === 0) {
+      showToast("No quiz available for this module yet.", "error");
+      return;
+    }
+    setActiveModuleQuizId(moduleId);
+    setModuleQuizAnswers({});
+  };
+
+  const submitModuleQuiz = async (courseId, moduleId) => {
+    const quiz = moduleQuizzes[moduleId];
+    if (!quiz) return;
+
+    const answers = quiz.questions.map((_, index) => moduleQuizAnswers[index]);
+    if (answers.some((answer) => answer === undefined)) {
+      showToast("Please answer all module quiz questions.", "error");
+      return;
+    }
+
+    try {
+      const attempt = await submitModuleQuizAttempt(moduleId, {
+        studentId: user.email,
+        answers,
+      });
+      setModuleAttempts((prev) => ({
+        ...prev,
+        [moduleId]: [attempt, ...(prev[moduleId] || [])],
+      }));
+      setProgress((prev) => {
+        const copy = { ...prev };
+        if (!copy[user.email]) copy[user.email] = {};
+        if (!copy[user.email][courseId]) {
+          copy[user.email][courseId] = { watchedVideos: [], quizScore: null, viewedModulePdfs: [], moduleQuizScores: {} };
+        }
+        copy[user.email][courseId].moduleQuizScores = {
+          ...(copy[user.email][courseId].moduleQuizScores || {}),
+          [moduleId]: attempt.score,
+        };
+        return copy;
+      });
+
+      setTimeout(() => {
+        setEnrolledStudents((prev) =>
+          prev.map((s) => {
+            if (s.email === user.email && s.courseId === courseId) {
+              return { ...s, progress: getCourseProgress(user.email, courseId) };
+            }
+            return s;
+          })
+        );
+      }, 50);
+
+      setActiveModuleQuizId(null);
+      setModuleQuizAnswers({});
+      showToast(`Module quiz completed! Score: ${attempt.score}%`, "success");
+    } catch (error) {
+      console.error(error);
+      showToast(`Module quiz submit failed: ${error.message}`, "error");
+    }
   };
 
   const startQuiz = (courseId) => {
@@ -198,7 +360,7 @@ const StudentDashboard = ({
       const copy = { ...prev };
       if (!copy[user.email]) copy[user.email] = {};
       if (!copy[user.email][courseId]) {
-        copy[user.email][courseId] = { watchedVideos: [], quizScore: null };
+        copy[user.email][courseId] = { watchedVideos: [], quizScore: null, viewedModulePdfs: [], moduleQuizScores: {} };
       }
       copy[user.email][courseId].quizScore = score;
       return copy;
@@ -547,6 +709,123 @@ const StudentDashboard = ({
                                 <Award size={14} />
                                 <span>{quizzes.some(q => q.courseId === c.id) ? "1 Quiz" : "No Quiz"}</span>
                               </div>
+                            </div>
+
+                            <div className="expanded-videos-list" style={{ marginTop: "1.25rem", borderTop: "1px solid var(--line)", paddingTop: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem", width: "100%" }}>
+                              <h4 style={{ fontSize: "0.88rem", color: "var(--title)", display: "flex", alignItems: "center", gap: "0.4rem", fontWeight: 700, margin: "0 0 0.25rem" }}>
+                                <BookOpen size={14} />
+                                <span>Course Modules</span>
+                              </h4>
+                              {(courseModules[c.id] || []).length === 0 ? (
+                                <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>No modules added yet.</span>
+                              ) : (
+                                (courseModules[c.id] || []).map((mod, moduleIndex) => {
+                                  const modulePdfList = modulePdfs[mod.id] || [];
+                                  const moduleQuiz = moduleQuizzes[mod.id];
+                                  const latestAttempt = moduleAttempts[mod.id]?.[0];
+                                  const studentCourseProgress = progress[user.email]?.[c.id];
+                                  const viewedPdfs = studentCourseProgress?.viewedModulePdfs || [];
+                                  const savedModuleScore = studentCourseProgress?.moduleQuizScores?.[mod.id];
+                                  const showQuiz = activeModuleQuizId === mod.id && moduleQuiz;
+
+                                  return (
+                                    <div key={mod.id} style={{ background: "var(--panel-soft)", border: "1px solid var(--line)", borderRadius: "0.5rem", padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.65rem" }}>
+                                      <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center" }}>
+                                        <div style={{ textAlign: "left", minWidth: 0 }}>
+                                          <strong style={{ color: "var(--title)", fontSize: "0.86rem" }}>{moduleIndex + 1}. {mod.title}</strong>
+                                          <p style={{ margin: "0.15rem 0 0", color: "var(--muted)", fontSize: "0.76rem", WebkitLineClamp: 2 }}>{mod.description}</p>
+                                        </div>
+                                        {savedModuleScore !== undefined || latestAttempt ? (
+                                          <span style={{ color: "var(--green)", display: "flex", alignItems: "center", gap: "0.2rem", fontSize: "0.76rem", fontWeight: 800 }}>
+                                            <CheckCircle2 size={13} />
+                                            Quiz {savedModuleScore ?? latestAttempt.score}%
+                                          </span>
+                                        ) : null}
+                                      </div>
+
+                                      {modulePdfList.length === 0 ? (
+                                        <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>No PDFs for this module yet.</span>
+                                      ) : (
+                                        <div style={{ display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+                                          {modulePdfList.map((pdf) => {
+                                            const viewed = viewedPdfs.includes(pdf.id);
+                                            return (
+                                              <div key={pdf.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.55rem", fontSize: "0.8rem" }}>
+                                                <span style={{ display: "flex", alignItems: "center", gap: "0.35rem", minWidth: 0, color: "var(--title)", fontWeight: 700 }}>
+                                                  {viewed ? <CheckCircle2 size={13} /> : <FileText size={13} />}
+                                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pdf.filename}</span>
+                                                </span>
+                                                <span style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
+                                                  <a
+                                                    className="course-pdf-link"
+                                                    href={getModulePdfPreviewUrl(mod.id, pdf.id)}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    onClick={() => markModulePdfViewed(c.id, pdf.id)}
+                                                  >
+                                                    <Eye size={13} />
+                                                    View
+                                                  </a>
+                                                  <a className="course-pdf-link" href={getModulePdfDownloadUrl(mod.id, pdf.id)} onClick={() => markModulePdfViewed(c.id, pdf.id)}>
+                                                    <Download size={13} />
+                                                    Download
+                                                  </a>
+                                                </span>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+
+                                      {moduleQuiz ? (
+                                        <div style={{ borderTop: "1px solid var(--line)", paddingTop: "0.6rem" }}>
+                                          {!showQuiz ? (
+                                            <button
+                                              className="course-card-btn enroll"
+                                              type="button"
+                                              onClick={() => startModuleQuiz(mod.id)}
+                                              style={{ width: "100%", height: "2.35rem", background: "var(--panel)", border: "1px solid var(--line)", color: "var(--text)" }}
+                                            >
+                                              <ClipboardCheck size={14} />
+                                              {latestAttempt || savedModuleScore !== undefined ? "Retake Module Quiz" : "Take Module Quiz"}
+                                            </button>
+                                          ) : (
+                                            <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem", textAlign: "left" }}>
+                                              <strong style={{ color: "var(--title)", fontSize: "0.84rem" }}>{moduleQuiz.title}</strong>
+                                              {moduleQuiz.questions.map((question, questionIndex) => (
+                                                <div key={questionIndex} style={{ display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+                                                  <span style={{ color: "var(--title)", fontSize: "0.82rem", fontWeight: 700 }}>{question.question}</span>
+                                                  {question.options.map((option, optionIndex) => (
+                                                    <button
+                                                      key={optionIndex}
+                                                      type="button"
+                                                      className={`quiz-option-btn ${moduleQuizAnswers[questionIndex] === optionIndex ? "selected" : ""}`}
+                                                      onClick={() => setModuleQuizAnswers((prev) => ({ ...prev, [questionIndex]: optionIndex }))}
+                                                    >
+                                                      <div className="quiz-option-badge">{String.fromCharCode(65 + optionIndex)}</div>
+                                                      <span>{option}</span>
+                                                    </button>
+                                                  ))}
+                                                </div>
+                                              ))}
+                                              <div style={{ display: "flex", gap: "0.5rem" }}>
+                                                <button className="submit-btn" type="button" onClick={() => submitModuleQuiz(c.id, mod.id)}>
+                                                  Submit Module Quiz
+                                                </button>
+                                                <button className="course-pdf-link" type="button" onClick={() => setActiveModuleQuizId(null)}>
+                                                  Cancel
+                                                </button>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>No quiz for this module yet.</span>
+                                      )}
+                                    </div>
+                                  );
+                                })
+                              )}
                             </div>
 
                             <div className="expanded-videos-list" style={{ marginTop: "1.25rem", borderTop: "1px solid var(--line)", paddingTop: "1rem", display: "flex", flexDirection: "column", gap: "0.6rem", width: "100%" }}>

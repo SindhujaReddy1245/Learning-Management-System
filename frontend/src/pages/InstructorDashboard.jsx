@@ -24,6 +24,13 @@ import {
   getCoursePdfPreviewUrl,
   uploadCoursePdf,
   saveCourseQuiz,
+  getCourseModules,
+  createCourseModule,
+  uploadModulePdf,
+  getModulePdfs,
+  createModuleQuiz,
+  getModuleQuiz,
+  getModulePdfPreviewUrl,
 } from "../api";
 
 const InstructorDashboard = ({
@@ -57,6 +64,20 @@ const InstructorDashboard = ({
   const [newCourseDetails, setNewCourseDetails] = useState("");
   const [isCreatingCourse, setIsCreatingCourse] = useState(false);
   const [uploadingPdfCourseId, setUploadingPdfCourseId] = useState(null);
+  const [modules, setModules] = useState([]);
+  const [showAddModule, setShowAddModule] = useState(false);
+  const [newModuleTitle, setNewModuleTitle] = useState("");
+  const [newModuleDesc, setNewModuleDesc] = useState("");
+  const [newModuleOrder, setNewModuleOrder] = useState(1);
+  const [modulePdfs, setModulePdfs] = useState({});
+  const [moduleQuizzes, setModuleQuizzes] = useState({});
+  const [uploadingModulePdfId, setUploadingModulePdfId] = useState(null);
+  const [activeModuleQuizId, setActiveModuleQuizId] = useState(null);
+  const [moduleQuizTitle, setModuleQuizTitle] = useState("");
+  const [moduleQuizQuestion, setModuleQuizQuestion] = useState("");
+  const [moduleQuizOptions, setModuleQuizOptions] = useState(["", "", "", ""]);
+  const [moduleQuizCorrect, setModuleQuizCorrect] = useState(0);
+  const [newModuleCourseId, setNewModuleCourseId] = useState("");
 
   // Form states - Add Video
   const [newVideoCourseId, setNewVideoCourseId] = useState("");
@@ -98,6 +119,36 @@ const InstructorDashboard = ({
     }
   }, [courses]);
 
+  useEffect(() => {
+    if (instructorSelectedCourseId) {
+      getCourseModules(instructorSelectedCourseId)
+        .then(setModules)
+        .catch((err) => console.error("Failed to load modules", err));
+    } else {
+      setModules([]);
+    }
+  }, [instructorSelectedCourseId]);
+
+  useEffect(() => {
+    if (modules.length === 0) return;
+
+    modules.forEach((mod) => {
+      getModulePdfs(mod.id)
+        .then((pdfs) => {
+          setModulePdfs((prev) => ({ ...prev, [mod.id]: pdfs }));
+        })
+        .catch((err) => console.error("Failed to load module PDFs", err));
+
+      getModuleQuiz(mod.id)
+        .then((quiz) => {
+          setModuleQuizzes((prev) => ({ ...prev, [mod.id]: quiz }));
+        })
+        .catch(() => {
+          setModuleQuizzes((prev) => ({ ...prev, [mod.id]: null }));
+        });
+    });
+  }, [modules]);
+
   // Helper stats calculation
   const getInstructorStats = () => {
     const totalCourses = courses.length;
@@ -111,6 +162,45 @@ const InstructorDashboard = ({
       totalQuizzes,
       totalEnrolls,
     };
+  };
+
+  // Instructor Create Module
+  const handleCreateModule = async (e) => {
+    e.preventDefault();
+    if (!newModuleCourseId) {
+      showToast("Select a course first", "error");
+      return;
+    }
+    if (!newModuleTitle.trim()) {
+      showToast("Module title required", "error");
+      return;
+    }
+    if (!newModuleDesc.trim()) {
+      showToast("Module description required", "error");
+      return;
+    }
+    if (newModuleOrder < 1) {
+      showToast("Module order must be 1 or higher", "error");
+      return;
+    }
+    const payload = {
+      title: newModuleTitle.trim(),
+      description: newModuleDesc.trim(),
+      order: newModuleOrder,
+    };
+    try {
+      const saved = await createCourseModule(newModuleCourseId, payload);
+      setModules((prev) => [...prev, saved]);
+      showToast("Module created", "success");
+      setNewModuleTitle("");
+      setNewModuleDesc("");
+      setNewModuleOrder(1);
+      setNewModuleCourseId("");
+      setInstructorTab("manage-courses");
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || "Failed to create module", "error");
+    }
   };
 
   // Instructor Add Course
@@ -403,6 +493,80 @@ const InstructorDashboard = ({
     }
   };
 
+  const handleUploadModulePdf = async (moduleId, file) => {
+    if (!file) return;
+
+    if (file.type !== "application/pdf") {
+      showToast("Please upload a PDF file.", "error");
+      return;
+    }
+
+    try {
+      setUploadingModulePdfId(moduleId);
+      const savedPdf = await uploadModulePdf(moduleId, file);
+      setModulePdfs((prev) => ({
+        ...prev,
+        [moduleId]: [savedPdf, ...(prev[moduleId] || [])],
+      }));
+      showToast("Module PDF uploaded successfully!", "success");
+    } catch (error) {
+      console.error(error);
+      showToast(`Module PDF upload failed: ${error.message}`, "error");
+    } finally {
+      setUploadingModulePdfId(null);
+    }
+  };
+
+  const startModuleQuizEditor = (moduleId) => {
+    const existingQuiz = moduleQuizzes[moduleId];
+    const firstQuestion = existingQuiz?.questions?.[0];
+    setActiveModuleQuizId(moduleId);
+    setModuleQuizTitle(existingQuiz?.title || "");
+    setModuleQuizQuestion(firstQuestion?.question || "");
+    setModuleQuizOptions(firstQuestion?.options || ["", "", "", ""]);
+    setModuleQuizCorrect(firstQuestion?.correctAnswer || 0);
+  };
+
+  const handleSaveModuleQuiz = async (moduleId) => {
+    if (!moduleQuizTitle.trim()) {
+      showToast("Module quiz title required", "error");
+      return;
+    }
+    if (!moduleQuizQuestion.trim()) {
+      showToast("Module quiz question required", "error");
+      return;
+    }
+    if (moduleQuizOptions.some((option) => !option.trim())) {
+      showToast("Please fill all module quiz options", "error");
+      return;
+    }
+
+    const payload = {
+      title: moduleQuizTitle.trim(),
+      questions: [
+        {
+          question: moduleQuizQuestion.trim(),
+          options: moduleQuizOptions.map((option) => option.trim()),
+          correctAnswer: Number(moduleQuizCorrect),
+        },
+      ],
+    };
+
+    try {
+      const savedQuiz = await createModuleQuiz(moduleId, payload);
+      setModuleQuizzes((prev) => ({ ...prev, [moduleId]: savedQuiz }));
+      setActiveModuleQuizId(null);
+      setModuleQuizTitle("");
+      setModuleQuizQuestion("");
+      setModuleQuizOptions(["", "", "", ""]);
+      setModuleQuizCorrect(0);
+      showToast("Module quiz saved successfully!", "success");
+    } catch (error) {
+      console.error(error);
+      showToast(`Module quiz save failed: ${error.message}`, "error");
+    }
+  };
+
   // Header render
   const renderHeader = () => {
     return (
@@ -440,6 +604,7 @@ const InstructorDashboard = ({
     if (!courseObj) return null;
 
     const courseVideos = videos.filter((v) => v.courseId === instructorSelectedCourseId);
+    // Module loading moved to top-level useEffect
     const courseQuiz = quizzes.find((q) => q.courseId === instructorSelectedCourseId);
     const courseEnrolls = enrolledStudents.filter((s) => s.courseId === instructorSelectedCourseId);
     const pdfs = coursePdfs[instructorSelectedCourseId] || [];
@@ -461,6 +626,124 @@ const InstructorDashboard = ({
         </div>
 
         <div className="instructor-detail-grid">
+          {/* Modules List */}
+          <div className="instructor-detail-card">
+            <h4>Modules ({modules.length})</h4>
+            {modules.length === 0 ? (
+              <span style={{ color: "var(--muted)", fontSize: "0.88rem" }}>No modules added yet.</span>
+            ) : (
+              <div className="instructor-detail-list" style={{ gap: "0.85rem" }}>
+                {modules.map((mod, idx) => (
+                  <div key={mod.id} className="instructor-detail-item" style={{ alignItems: "stretch", flexDirection: "column", gap: "0.7rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "0.8rem", alignItems: "center" }}>
+                      <span>{idx + 1}. {mod.title}</span>
+                      <strong>Order {mod.order}</strong>
+                    </div>
+
+                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                      <label className="course-pdf-upload-btn" htmlFor={`module-pdf-${mod.id}`} style={{ width: "fit-content" }}>
+                        <Upload size={14} />
+                        {uploadingModulePdfId === mod.id ? "Uploading..." : "Upload PDF"}
+                      </label>
+                      <input
+                        id={`module-pdf-${mod.id}`}
+                        type="file"
+                        accept="application/pdf"
+                        style={{ display: "none" }}
+                        disabled={uploadingModulePdfId === mod.id}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          handleUploadModulePdf(mod.id, file);
+                          event.target.value = "";
+                        }}
+                      />
+                      <button
+                        className="course-pdf-link"
+                        type="button"
+                        onClick={() => startModuleQuizEditor(mod.id)}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <ClipboardCheck size={14} />
+                        {moduleQuizzes[mod.id] ? "Edit Quiz" : "Create Quiz"}
+                      </button>
+                    </div>
+
+                    {(modulePdfs[mod.id] || []).length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+                        {(modulePdfs[mod.id] || []).map((pdf) => (
+                          <div key={pdf.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.65rem", alignItems: "center", fontSize: "0.8rem" }}>
+                            <span style={{ display: "flex", alignItems: "center", gap: "0.35rem", minWidth: 0 }}>
+                              <FileText size={13} />
+                              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pdf.filename}</span>
+                            </span>
+                            <a className="course-pdf-link" href={getModulePdfPreviewUrl(mod.id, pdf.id)} target="_blank" rel="noreferrer">
+                              <Eye size={13} />
+                              Preview
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {moduleQuizzes[mod.id] && activeModuleQuizId !== mod.id && (
+                      <span style={{ color: "var(--muted)", fontSize: "0.78rem" }}>
+                        Quiz ready: {moduleQuizzes[mod.id].title}
+                      </span>
+                    )}
+
+                    {activeModuleQuizId === mod.id && (
+                      <div style={{ borderTop: "1px solid var(--line)", paddingTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                        <input
+                          className="form-input"
+                          value={moduleQuizTitle}
+                          onChange={(e) => setModuleQuizTitle(e.target.value)}
+                          placeholder="Quiz title"
+                        />
+                        <input
+                          className="form-input"
+                          value={moduleQuizQuestion}
+                          onChange={(e) => setModuleQuizQuestion(e.target.value)}
+                          placeholder="Question"
+                        />
+                        {moduleQuizOptions.map((option, optionIndex) => (
+                          <input
+                            key={optionIndex}
+                            className="form-input"
+                            value={option}
+                            onChange={(e) => {
+                              const nextOptions = [...moduleQuizOptions];
+                              nextOptions[optionIndex] = e.target.value;
+                              setModuleQuizOptions(nextOptions);
+                            }}
+                            placeholder={`Option ${String.fromCharCode(65 + optionIndex)}`}
+                          />
+                        ))}
+                        <select
+                          className="form-select"
+                          value={moduleQuizCorrect}
+                          onChange={(e) => setModuleQuizCorrect(Number(e.target.value))}
+                        >
+                          {moduleQuizOptions.map((_, optionIndex) => (
+                            <option key={optionIndex} value={optionIndex}>
+                              Correct: Option {String.fromCharCode(65 + optionIndex)}
+                            </option>
+                          ))}
+                        </select>
+                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                          <button className="form-submit-btn" type="button" onClick={() => handleSaveModuleQuiz(mod.id)}>
+                            Save Module Quiz
+                          </button>
+                          <button className="course-pdf-link" type="button" onClick={() => setActiveModuleQuizId(null)}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           {/* Videos List Box */}
           <div className="instructor-detail-card">
             <h4>Playlist Video Lessons ({courseVideos.length})</h4>
@@ -609,6 +892,14 @@ const InstructorDashboard = ({
               <PlusCircle size={16} />
               Add Course
             </button>
+         {/* Nav: Add Module Tab */}
+            <button
+              className={`dashboard-tab-btn ${instructorTab === "add-module" ? "active" : ""}`}
+              onClick={() => setInstructorTab("add-module")}
+            >
+              <PlusCircle size={16} />
+              Add Module
+            </button>
 
             <button
               className={`dashboard-tab-btn ${instructorTab === "add-video" ? "active" : ""}`}
@@ -731,6 +1022,67 @@ const InstructorDashboard = ({
         {/* Instructor course specific details workspace */}
         {instructorTab === "manage-courses" && instructorSelectedCourseId && (
           renderInstructorCourseWorkspace()
+        )}
+
+        {/* Tab: Add Module */}
+        {instructorTab === "add-module" && (
+          <form className="form-dashboard-card" onSubmit={handleCreateModule}>
+            <h3>Create a Module</h3>
+            <p>Assign a module to a course.</p>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="module-course">Course</label>
+              <select
+                id="module-course"
+                className="form-select"
+                value={newModuleCourseId}
+                onChange={(e) => setNewModuleCourseId(e.target.value)}
+              >
+                <option value="">Select a course</option>
+                {courses.map((c) => (
+                  <option key={c.id} value={c.id}>{c.title}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="module-title">Module Title</label>
+              <input
+                id="module-title"
+                className="form-input"
+                value={newModuleTitle}
+                onChange={(e) => setNewModuleTitle(e.target.value)}
+                placeholder="Module name"
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="module-desc">Description</label>
+              <textarea
+                id="module-desc"
+                className="form-textarea"
+                rows="3"
+                value={newModuleDesc}
+                onChange={(e) => setNewModuleDesc(e.target.value)}
+                placeholder="Module description"
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="module-order">Order</label>
+              <input
+                id="module-order"
+                type="number"
+                className="form-input"
+                min="1"
+                value={newModuleOrder}
+                onChange={(e) => setNewModuleOrder(parseInt(e.target.value) || 0)}
+                placeholder="1"
+              />
+            </div>
+
+            <button className="form-submit-btn" type="submit">Create Module</button>
+          </form>
         )}
 
         {/* Tab: Add Course */}

@@ -70,6 +70,69 @@ export function getCoursePdfDownloadUrl(courseId, pdfId) {
   return `${getCoursePdfPreviewUrl(courseId, pdfId)}?download=true`;
 }
 
+export function getCourseModules(courseId) {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/modules`);
+}
+
+export function createCourseModule(courseId, module) {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/modules`, {
+    method: "POST",
+    body: JSON.stringify(module),
+  });
+}
+
+// Module PDF & Quiz API helpers
+export function uploadModulePdf(moduleId, file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return fetch(`${API_BASE_URL}/api/modules/${encodeURIComponent(moduleId)}/pdfs`, {
+    method: 'POST',
+    body: formData,
+  }).then(res => {
+    if (!res.ok) {
+      return res.json().catch(() => ({})).then(err => { throw new Error(err.detail || `PDF upload failed (${res.status})`); });
+    }
+    return res.json();
+  });
+}
+
+export function getModulePdfs(moduleId) {
+  return request(`/api/modules/${encodeURIComponent(moduleId)}/pdfs`);
+}
+
+// Module PDF preview / download helpers
+export function getModulePdfPreviewUrl(moduleId, pdfId) {
+  return `${API_BASE_URL}/api/modules/${encodeURIComponent(moduleId)}/pdfs/${encodeURIComponent(pdfId)}/file`;
+}
+
+export function getModulePdfDownloadUrl(moduleId, pdfId) {
+  return `${getModulePdfPreviewUrl(moduleId, pdfId)}?download=true`;
+}
+
+export function createModuleQuiz(moduleId, quiz) {
+  return request(`/api/modules/${encodeURIComponent(moduleId)}/quizzes`, {
+    method: 'POST',
+    body: JSON.stringify(quiz),
+  });
+}
+
+export function getModuleQuiz(moduleId) {
+  return request(`/api/modules/${encodeURIComponent(moduleId)}/quizzes`);
+}
+
+export function getModuleQuizAttempts(moduleId, studentId) {
+  return request(
+    `/api/modules/${encodeURIComponent(moduleId)}/quiz-attempts?student_id=${encodeURIComponent(studentId)}`
+  );
+}
+
+export function submitModuleQuizAttempt(moduleId, attempt) {
+  return request(`/api/modules/${encodeURIComponent(moduleId)}/quiz-attempts`, {
+    method: "POST",
+    body: JSON.stringify(attempt),
+  });
+}
+
 export function getCourseQuiz(courseId) {
   return request(`/api/courses/${encodeURIComponent(courseId)}/quizzes`);
 }
