@@ -723,6 +723,29 @@ function App() {
     return renderDashboard();
   }
 
+  function renderStudentDashboard() {
+    return (
+      <StudentDashboard
+        user={user}
+        courses={courses}
+        videos={videos}
+        quizzes={quizzes}
+        enrollments={enrollments}
+        setEnrollments={setEnrollments}
+        enrolledStudents={enrolledStudents}
+        setEnrolledStudents={setEnrolledStudents}
+        progress={progress}
+        setProgress={setProgress}
+        coursePdfs={coursePdfs}
+        showToast={showToast}
+        handleLogout={handleLogout}
+        isDark={isDark}
+        toggleTheme={toggleTheme}
+        goHome={goHome}
+      />
+    );
+  }
+
   // ==========================================
   // ROOT ROUTING DISPATCHER
   // ==========================================
@@ -739,26 +762,14 @@ function App() {
           path="/student-dashboard"
           element={renderProtectedDashboard(
             "student",
-            () => (
-              <StudentDashboard
-                user={user}
-                courses={courses}
-                videos={videos}
-                quizzes={quizzes}
-                enrollments={enrollments}
-                setEnrollments={setEnrollments}
-                enrolledStudents={enrolledStudents}
-                setEnrolledStudents={setEnrolledStudents}
-                progress={progress}
-                setProgress={setProgress}
-                coursePdfs={coursePdfs}
-                showToast={showToast}
-                handleLogout={handleLogout}
-                isDark={isDark}
-                toggleTheme={toggleTheme}
-                goHome={goHome}
-              />
-            )
+            renderStudentDashboard
+          )}
+        />
+        <Route
+          path="/student-dashboard/courses/:courseId"
+          element={renderProtectedDashboard(
+            "student",
+            renderStudentDashboard
           )}
         />
         <Route

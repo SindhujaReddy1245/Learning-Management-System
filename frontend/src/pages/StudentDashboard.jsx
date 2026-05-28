@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   BookOpen,
   ClipboardCheck,
@@ -53,9 +54,12 @@ const StudentDashboard = ({
   toggleTheme,
   goHome,
 }) => {
+  const navigate = useNavigate();
+  const { courseId: routeCourseId } = useParams();
+
   // Local UI states
   const [studentTab, setStudentTab] = useState("my-courses"); // 'my-courses', 'browse'
-  const [activeCourseId, setActiveCourseId] = useState(null);
+  const [activeCourseId, setActiveCourseId] = useState(routeCourseId || null);
   const [expandedVideosCourseId, setExpandedVideosCourseId] = useState(null);
   const [activeVideoId, setActiveVideoId] = useState(null);
   const [quizActive, setQuizActive] = useState(false);
@@ -67,8 +71,17 @@ const StudentDashboard = ({
   const [modulePdfs, setModulePdfs] = useState({});
   const [moduleQuizzes, setModuleQuizzes] = useState({});
   const [moduleAttempts, setModuleAttempts] = useState({});
+  const [activeModuleId, setActiveModuleId] = useState(null);
   const [activeModuleQuizId, setActiveModuleQuizId] = useState(null);
   const [moduleQuizAnswers, setModuleQuizAnswers] = useState({});
+
+  useEffect(() => {
+    setActiveCourseId(routeCourseId || null);
+    setActiveModuleId(null);
+    setActiveModuleQuizId(null);
+    setQuizActive(false);
+    setQuizFinished(false);
+  }, [routeCourseId]);
 
   useEffect(() => {
     const enrolledCourseIds = enrollments
@@ -235,6 +248,41 @@ const StudentDashboard = ({
     }, 50);
 
     showToast("Lesson completed! Progress updated.", "success");
+  };
+
+  const openCourse = (courseId) => {
+    setActiveCourseId(courseId);
+    setActiveModuleId(null);
+    setActiveModuleQuizId(null);
+    setQuizActive(false);
+    setQuizFinished(false);
+    navigate(`/student-dashboard/courses/${encodeURIComponent(courseId)}`);
+  };
+
+  const closeCourse = () => {
+    setActiveCourseId(null);
+    setActiveModuleId(null);
+    setActiveModuleQuizId(null);
+    setQuizActive(false);
+    setQuizFinished(false);
+    navigate("/student-dashboard");
+  };
+
+  const isModuleQuizCompleted = (courseId, moduleId) => {
+    const savedModuleScore = progress[user.email]?.[courseId]?.moduleQuizScores?.[moduleId];
+    return savedModuleScore !== undefined || (moduleAttempts[moduleId] || []).length > 0;
+  };
+
+  const isModulePdfCompleted = (courseId, moduleId) => {
+    const pdfs = modulePdfs[moduleId] || [];
+    if (pdfs.length === 0) return true;
+    const viewedPdfs = progress[user.email]?.[courseId]?.viewedModulePdfs || [];
+    return pdfs.every((pdf) => viewedPdfs.includes(pdf.id));
+  };
+
+  const isModuleCompleted = (courseId, moduleId) => {
+    const quiz = moduleQuizzes[moduleId];
+    return isModulePdfCompleted(courseId, moduleId) && (!quiz || isModuleQuizCompleted(courseId, moduleId));
   };
 
   const markModulePdfViewed = (courseId, pdfId) => {
@@ -528,6 +576,242 @@ const StudentDashboard = ({
     );
   };
 
+  const renderCourseLearningView = () => {
+    const course = courses.find((c) => c.id === activeCourseId);
+    if (!course) return null;
+
+    const modules = courseModules[course.id] || [];
+    const selectedModule = modules.find((mod) => mod.id === activeModuleId);
+    const courseProg = getCourseProgress(user.email, course.id);
+    const coursePdfList = coursePdfs[course.id] || [];
+    const courseQuiz = quizzes.find((q) => q.courseId === course.id);
+
+    return (
+      <div className="course-learning-shell">
+        <div className="classroom-header course-learning-header">
+          <button className="classroom-back-btn" type="button" onClick={closeCourse} aria-label="Back to my courses">
+            <ChevronLeft size={20} />
+          </button>
+          <div className="classroom-title-area">
+            <h2>{course.title}</h2>
+            <span>{course.category} • {course.level} • {course.duration}</span>
+          </div>
+        </div>
+
+        <div className="course-learning-layout">
+          <aside className="course-module-sidebar">
+            <button
+              className={`module-nav-item ${!activeModuleId ? "active" : ""}`}
+              type="button"
+              onClick={() => {
+                setActiveModuleId(null);
+                setActiveModuleQuizId(null);
+              }}
+            >
+              <span className="module-nav-index">
+                <BookOpen size={15} />
+              </span>
+              <span className="module-nav-copy">
+                <strong>Course Overview</strong>
+                <small>{coursePdfList.length} PDF{coursePdfList.length === 1 ? "" : "s"}</small>
+              </span>
+            </button>
+
+            <div className="module-sidebar-title">Modules</div>
+            {modules.length === 0 ? (
+              <p className="module-sidebar-empty">No modules added yet.</p>
+            ) : (
+              modules.map((mod, index) => {
+                const completed = isModuleCompleted(course.id, mod.id);
+                return (
+                  <button
+                    key={mod.id}
+                    className={`module-nav-item ${activeModuleId === mod.id ? "active" : ""}`}
+                    type="button"
+                    onClick={() => {
+                      setActiveModuleId(mod.id);
+                      setActiveModuleQuizId(null);
+                    }}
+                  >
+                    <span className={`module-nav-index ${completed ? "completed" : ""}`}>
+                      {completed ? <CheckCircle2 size={15} /> : index + 1}
+                    </span>
+                    <span className="module-nav-copy">
+                      <strong>{mod.title}</strong>
+                      <small>{completed ? "Completed" : "In progress"}</small>
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </aside>
+
+          <section className="course-content-panel">
+            {!selectedModule ? (
+              <>
+                <div className="course-detail-hero">
+                  <div>
+                    <span className="course-detail-kicker">Course progress</span>
+                    <h3>{course.title}</h3>
+                    <p>{course.description}</p>
+                  </div>
+                  <strong>{courseProg}%</strong>
+                </div>
+
+                <div className="course-progress-box">
+                  <div className="progress-track-lms">
+                    <div className="progress-fill-lms" style={{ width: `${courseProg}%` }}></div>
+                  </div>
+                </div>
+
+                {course.details && <p className="course-detail-text">{course.details}</p>}
+
+                <div className="course-content-section">
+                  <h4><FileText size={16} /> Course PDFs</h4>
+                  {coursePdfList.length === 0 ? (
+                    <p className="empty-learning-text">No course PDFs uploaded yet.</p>
+                  ) : (
+                    <div className="learning-resource-list">
+                      {coursePdfList.map((pdf) => (
+                        <div className="learning-resource-row" key={pdf.id}>
+                          <span><FileText size={15} /> {pdf.filename}</span>
+                          <span>
+                            <a className="course-pdf-link" href={getCoursePdfPreviewUrl(course.id, pdf.id)} target="_blank" rel="noreferrer">
+                              <Eye size={14} />
+                              Preview
+                            </a>
+                            <a className="course-pdf-link" href={getCoursePdfDownloadUrl(course.id, pdf.id)}>
+                              <Download size={14} />
+                              Download
+                            </a>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {courseQuiz ? (
+                  <div className="course-content-section">
+                    <h4><ClipboardCheck size={16} /> Course Quiz</h4>
+                    {quizActive ? (
+                      renderQuizSolver(courseQuiz)
+                    ) : (
+                      <button className="course-card-btn enroll compact-action" type="button" onClick={() => startQuiz(course.id)}>
+                        <ClipboardCheck size={15} />
+                        {progress[user.email]?.[course.id]?.quizScore !== null && progress[user.email]?.[course.id]?.quizScore !== undefined ? "Retake Course Quiz" : "Take Course Quiz"}
+                      </button>
+                    )}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <div className="module-content-header">
+                  <div>
+                    <span className="course-detail-kicker">Selected module</span>
+                    <h3>{selectedModule.title}</h3>
+                    <p>{selectedModule.description}</p>
+                  </div>
+                  {isModuleCompleted(course.id, selectedModule.id) ? (
+                    <span className="module-complete-badge"><CheckCircle2 size={15} /> Completed</span>
+                  ) : null}
+                </div>
+
+                <div className="course-content-section">
+                  <h4><FileText size={16} /> Module PDFs</h4>
+                  {(modulePdfs[selectedModule.id] || []).length === 0 ? (
+                    <p className="empty-learning-text">No PDFs for this module yet.</p>
+                  ) : (
+                    <div className="learning-resource-list">
+                      {(modulePdfs[selectedModule.id] || []).map((pdf) => {
+                        const viewed = (progress[user.email]?.[course.id]?.viewedModulePdfs || []).includes(pdf.id);
+                        return (
+                          <div className="learning-resource-row" key={pdf.id}>
+                            <span>
+                              {viewed ? <CheckCircle2 size={15} /> : <FileText size={15} />}
+                              {pdf.filename}
+                            </span>
+                            <span>
+                              <a
+                                className="course-pdf-link"
+                                href={getModulePdfPreviewUrl(selectedModule.id, pdf.id)}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={() => markModulePdfViewed(course.id, pdf.id)}
+                              >
+                                <Eye size={14} />
+                                View
+                              </a>
+                              <a className="course-pdf-link" href={getModulePdfDownloadUrl(selectedModule.id, pdf.id)} onClick={() => markModulePdfViewed(course.id, pdf.id)}>
+                                <Download size={14} />
+                                Download
+                              </a>
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="course-content-section">
+                  <h4><ClipboardCheck size={16} /> Module Quiz</h4>
+                  {moduleQuizzes[selectedModule.id] ? (
+                    activeModuleQuizId === selectedModule.id ? (
+                      <div className="module-quiz-panel">
+                        <strong>{moduleQuizzes[selectedModule.id].title}</strong>
+                        {moduleQuizzes[selectedModule.id].questions.map((question, questionIndex) => (
+                          <div className="module-question-block" key={questionIndex}>
+                            <span>{question.question}</span>
+                            {question.options.map((option, optionIndex) => (
+                              <button
+                                key={optionIndex}
+                                type="button"
+                                className={`quiz-option-btn ${moduleQuizAnswers[questionIndex] === optionIndex ? "selected" : ""}`}
+                                onClick={() => setModuleQuizAnswers((prev) => ({ ...prev, [questionIndex]: optionIndex }))}
+                              >
+                                <div className="quiz-option-badge">{String.fromCharCode(65 + optionIndex)}</div>
+                                <span>{option}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ))}
+                        <div className="module-quiz-actions">
+                          <button className="submit-btn" type="button" onClick={() => submitModuleQuiz(course.id, selectedModule.id)}>
+                            Submit Module Quiz
+                          </button>
+                          <button className="course-pdf-link" type="button" onClick={() => setActiveModuleQuizId(null)}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="module-quiz-start">
+                        {isModuleQuizCompleted(course.id, selectedModule.id) ? (
+                          <span className="module-complete-badge">
+                            <CheckCircle2 size={15} />
+                            Quiz completed
+                          </span>
+                        ) : null}
+                        <button className="course-card-btn enroll compact-action" type="button" onClick={() => startModuleQuiz(selectedModule.id)}>
+                          <ClipboardCheck size={15} />
+                          {isModuleQuizCompleted(course.id, selectedModule.id) ? "Retake Module Quiz" : "Take Module Quiz"}
+                        </button>
+                      </div>
+                    )
+                  ) : (
+                    <p className="empty-learning-text">No quiz for this module yet.</p>
+                  )}
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      </div>
+    );
+  };
+
   const stats = getStudentProgressStats();
   const studentEnrs = enrollments.filter((e) => e.studentEmail === user.email);
   const studentEnrolledCourses = courses.filter((c) =>
@@ -567,6 +851,7 @@ const StudentDashboard = ({
               onClick={() => {
                 setActiveCourseId(null);
                 setStudentTab("my-courses");
+                navigate("/student-dashboard");
               }}
             >
               <BookOpen size={16} />
@@ -577,6 +862,7 @@ const StudentDashboard = ({
               onClick={() => {
                 setActiveCourseId(null);
                 setStudentTab("browse");
+                navigate("/student-dashboard");
               }}
             >
               <Users size={16} />
@@ -587,38 +873,7 @@ const StudentDashboard = ({
 
         {/* Classroom Sub-View */}
         {activeCourseId ? (
-          <div style={{ alignSelf: "start", width: "100%" }}>
-            <div className="classroom-header" style={{ marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "1rem", borderBottom: "1px solid var(--line)", paddingBottom: "1rem" }}>
-              <button
-                className="classroom-back-btn"
-                type="button"
-                onClick={() => setActiveCourseId(null)}
-                style={{
-                  background: "var(--panel)",
-                  border: "1px solid var(--line)",
-                  borderRadius: "50%",
-                  width: "2.5rem",
-                  height: "2.5rem",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                  color: "var(--text)"
-                }}
-              >
-                <ChevronLeft size={20} />
-              </button>
-              <div className="classroom-title-area" style={{ display: "flex", flexDirection: "column", gap: "0.2rem", textAlign: "left" }}>
-                <h2 style={{ fontSize: "1.25rem", color: "var(--title)", margin: 0 }}>
-                  Quiz Challenge: {courses.find((c) => c.id === activeCourseId)?.title}
-                </h2>
-                <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>
-                  Answer all the challenge questions to log completion progress.
-                </span>
-              </div>
-            </div>
-            {renderQuizSolver(quizzes.find((q) => q.courseId === activeCourseId))}
-          </div>
+          renderCourseLearningView()
         ) : (
           <>
             {/* General Metrics Overview */}
@@ -679,16 +934,15 @@ const StudentDashboard = ({
                   <div className="courses-grid-lms">
                     {studentEnrolledCourses.map((c, index) => {
                       const courseProg = getCourseProgress(user.email, c.id);
-                      const pdfs = coursePdfs[c.id] || [];
+                      const moduleCount = (courseModules[c.id] || []).length;
                       return (
                         <article className="course-card-lms" key={c.id}>
                           <div className={`course-card-banner tone-${(index % 4) + 1}`}>
                             <span className="course-category-tag">{c.category}</span>
                             <span style={{ fontSize: "0.8rem", fontWeight: 800 }}>{c.level}</span>
                           </div>
-                          <div className="course-card-body">
+                          <div className="course-card-body enrolled-course-overview">
                             <h3>{c.title}</h3>
-                            <p>{c.description}</p>
 
                             <div className="course-progress-box">
                               <div className="course-progress-header">
@@ -702,273 +956,24 @@ const StudentDashboard = ({
 
                             <div className="course-meta-row">
                               <div className="course-meta-item">
-                                <Tv size={14} />
-                                <span>{videos.filter(v => v.courseId === c.id).length} Videos</span>
+                                <BookOpen size={14} />
+                                <span>{moduleCount} Module{moduleCount === 1 ? "" : "s"}</span>
                               </div>
                               <div className="course-meta-item">
-                                <Award size={14} />
-                                <span>{quizzes.some(q => q.courseId === c.id) ? "1 Quiz" : "No Quiz"}</span>
+                                <CheckCircle2 size={14} />
+                                <span>{courseProg === 100 ? "Completed" : "In progress"}</span>
                               </div>
-                            </div>
-
-                            <div className="expanded-videos-list" style={{ marginTop: "1.25rem", borderTop: "1px solid var(--line)", paddingTop: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem", width: "100%" }}>
-                              <h4 style={{ fontSize: "0.88rem", color: "var(--title)", display: "flex", alignItems: "center", gap: "0.4rem", fontWeight: 700, margin: "0 0 0.25rem" }}>
-                                <BookOpen size={14} />
-                                <span>Course Modules</span>
-                              </h4>
-                              {(courseModules[c.id] || []).length === 0 ? (
-                                <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>No modules added yet.</span>
-                              ) : (
-                                (courseModules[c.id] || []).map((mod, moduleIndex) => {
-                                  const modulePdfList = modulePdfs[mod.id] || [];
-                                  const moduleQuiz = moduleQuizzes[mod.id];
-                                  const latestAttempt = moduleAttempts[mod.id]?.[0];
-                                  const studentCourseProgress = progress[user.email]?.[c.id];
-                                  const viewedPdfs = studentCourseProgress?.viewedModulePdfs || [];
-                                  const savedModuleScore = studentCourseProgress?.moduleQuizScores?.[mod.id];
-                                  const showQuiz = activeModuleQuizId === mod.id && moduleQuiz;
-
-                                  return (
-                                    <div key={mod.id} style={{ background: "var(--panel-soft)", border: "1px solid var(--line)", borderRadius: "0.5rem", padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.65rem" }}>
-                                      <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center" }}>
-                                        <div style={{ textAlign: "left", minWidth: 0 }}>
-                                          <strong style={{ color: "var(--title)", fontSize: "0.86rem" }}>{moduleIndex + 1}. {mod.title}</strong>
-                                          <p style={{ margin: "0.15rem 0 0", color: "var(--muted)", fontSize: "0.76rem", WebkitLineClamp: 2 }}>{mod.description}</p>
-                                        </div>
-                                        {savedModuleScore !== undefined || latestAttempt ? (
-                                          <span style={{ color: "var(--green)", display: "flex", alignItems: "center", gap: "0.2rem", fontSize: "0.76rem", fontWeight: 800 }}>
-                                            <CheckCircle2 size={13} />
-                                            Quiz {savedModuleScore ?? latestAttempt.score}%
-                                          </span>
-                                        ) : null}
-                                      </div>
-
-                                      {modulePdfList.length === 0 ? (
-                                        <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>No PDFs for this module yet.</span>
-                                      ) : (
-                                        <div style={{ display: "flex", flexDirection: "column", gap: "0.45rem" }}>
-                                          {modulePdfList.map((pdf) => {
-                                            const viewed = viewedPdfs.includes(pdf.id);
-                                            return (
-                                              <div key={pdf.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.55rem", fontSize: "0.8rem" }}>
-                                                <span style={{ display: "flex", alignItems: "center", gap: "0.35rem", minWidth: 0, color: "var(--title)", fontWeight: 700 }}>
-                                                  {viewed ? <CheckCircle2 size={13} /> : <FileText size={13} />}
-                                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pdf.filename}</span>
-                                                </span>
-                                                <span style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
-                                                  <a
-                                                    className="course-pdf-link"
-                                                    href={getModulePdfPreviewUrl(mod.id, pdf.id)}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                    onClick={() => markModulePdfViewed(c.id, pdf.id)}
-                                                  >
-                                                    <Eye size={13} />
-                                                    View
-                                                  </a>
-                                                  <a className="course-pdf-link" href={getModulePdfDownloadUrl(mod.id, pdf.id)} onClick={() => markModulePdfViewed(c.id, pdf.id)}>
-                                                    <Download size={13} />
-                                                    Download
-                                                  </a>
-                                                </span>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-
-                                      {moduleQuiz ? (
-                                        <div style={{ borderTop: "1px solid var(--line)", paddingTop: "0.6rem" }}>
-                                          {!showQuiz ? (
-                                            <button
-                                              className="course-card-btn enroll"
-                                              type="button"
-                                              onClick={() => startModuleQuiz(mod.id)}
-                                              style={{ width: "100%", height: "2.35rem", background: "var(--panel)", border: "1px solid var(--line)", color: "var(--text)" }}
-                                            >
-                                              <ClipboardCheck size={14} />
-                                              {latestAttempt || savedModuleScore !== undefined ? "Retake Module Quiz" : "Take Module Quiz"}
-                                            </button>
-                                          ) : (
-                                            <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem", textAlign: "left" }}>
-                                              <strong style={{ color: "var(--title)", fontSize: "0.84rem" }}>{moduleQuiz.title}</strong>
-                                              {moduleQuiz.questions.map((question, questionIndex) => (
-                                                <div key={questionIndex} style={{ display: "flex", flexDirection: "column", gap: "0.45rem" }}>
-                                                  <span style={{ color: "var(--title)", fontSize: "0.82rem", fontWeight: 700 }}>{question.question}</span>
-                                                  {question.options.map((option, optionIndex) => (
-                                                    <button
-                                                      key={optionIndex}
-                                                      type="button"
-                                                      className={`quiz-option-btn ${moduleQuizAnswers[questionIndex] === optionIndex ? "selected" : ""}`}
-                                                      onClick={() => setModuleQuizAnswers((prev) => ({ ...prev, [questionIndex]: optionIndex }))}
-                                                    >
-                                                      <div className="quiz-option-badge">{String.fromCharCode(65 + optionIndex)}</div>
-                                                      <span>{option}</span>
-                                                    </button>
-                                                  ))}
-                                                </div>
-                                              ))}
-                                              <div style={{ display: "flex", gap: "0.5rem" }}>
-                                                <button className="submit-btn" type="button" onClick={() => submitModuleQuiz(c.id, mod.id)}>
-                                                  Submit Module Quiz
-                                                </button>
-                                                <button className="course-pdf-link" type="button" onClick={() => setActiveModuleQuizId(null)}>
-                                                  Cancel
-                                                </button>
-                                              </div>
-                                            </div>
-                                          )}
-                                        </div>
-                                      ) : (
-                                        <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>No quiz for this module yet.</span>
-                                      )}
-                                    </div>
-                                  );
-                                })
-                              )}
-                            </div>
-
-                            <div className="expanded-videos-list" style={{ marginTop: "1.25rem", borderTop: "1px solid var(--line)", paddingTop: "1rem", display: "flex", flexDirection: "column", gap: "0.6rem", width: "100%" }}>
-                              <h4 style={{ fontSize: "0.88rem", color: "var(--title)", display: "flex", alignItems: "center", gap: "0.4rem", fontWeight: 700, margin: "0 0 0.25rem" }}>
-                                <FileText size={14} />
-                                <span>Course PDFs</span>
-                              </h4>
-                              {pdfs.length === 0 ? (
-                                <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>No PDF materials uploaded yet.</span>
-                              ) : (
-                                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", width: "100%" }}>
-                                  {pdfs.map((pdf) => (
-                                    <div
-                                      key={pdf.id}
-                                      style={{
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        alignItems: "center",
-                                        gap: "0.65rem",
-                                        background: "var(--panel-soft)",
-                                        padding: "0.6rem 0.8rem",
-                                        borderRadius: "0.5rem",
-                                        border: "1px solid var(--line)",
-                                        width: "100%",
-                                        boxSizing: "border-box"
-                                      }}
-                                    >
-                                      <span style={{ display: "flex", alignItems: "center", gap: "0.35rem", minWidth: 0, fontSize: "0.82rem", color: "var(--title)", fontWeight: 700 }}>
-                                        <FileText size={14} />
-                                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pdf.filename}</span>
-                                      </span>
-                                      <span style={{ display: "flex", gap: "0.45rem", flexShrink: 0 }}>
-                                        <a className="course-pdf-link" href={getCoursePdfPreviewUrl(c.id, pdf.id)} target="_blank" rel="noreferrer">
-                                          <Eye size={14} />
-                                          Preview
-                                        </a>
-                                        <a className="course-pdf-link" href={getCoursePdfDownloadUrl(c.id, pdf.id)}>
-                                          <Download size={14} />
-                                          Download
-                                        </a>
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Standard lessons playlist (still accessible directly on card in dashboard per user design) */}
-                            <div className="expanded-videos-list" style={{ marginTop: "1.25rem", borderTop: "1px solid var(--line)", paddingTop: "1rem", display: "flex", flexDirection: "column", gap: "0.6rem", width: "100%" }}>
-                              <h4 style={{ fontSize: "0.88rem", color: "var(--title)", display: "flex", alignItems: "center", gap: "0.4rem", fontWeight: 700, margin: "0 0 0.25rem" }}>
-                                <Tv size={14} />
-                                <span>Lesson Playlist</span>
-                              </h4>
-                              {videos.filter(v => v.courseId === c.id).length === 0 ? (
-                                <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>No videos added yet.</span>
-                              ) : (
-                                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", width: "100%" }}>
-                                  {videos.filter(v => v.courseId === c.id).map((v) => {
-                                    const studentCourseProgress = progress[user.email]?.[c.id];
-                                    const watchedList = studentCourseProgress?.watchedVideos || [];
-                                    const isWatched = watchedList.includes(v.id);
-                                    return (
-                                      <div
-                                        key={v.id}
-                                        style={{
-                                          display: "flex",
-                                          justifyContent: "space-between",
-                                          alignItems: "center",
-                                          background: "var(--panel-soft)",
-                                          padding: "0.6rem 0.8rem",
-                                          borderRadius: "0.5rem",
-                                          border: "1px solid var(--line)",
-                                          width: "100%",
-                                          boxSizing: "border-box"
-                                        }}
-                                      >
-                                        <div style={{ display: "flex", flexDirection: "column", gap: "0.15rem", maxWidth: "65%", textAlign: "left" }}>
-                                          <span style={{ fontSize: "0.82rem", color: "var(--title)", fontWeight: 700, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
-                                            {v.title}
-                                          </span>
-                                          <span style={{ fontSize: "0.74rem", color: "var(--muted)" }}>Duration: {v.duration}</span>
-                                        </div>
-
-                                        {isWatched ? (
-                                          <span style={{ color: "var(--green)", display: "flex", alignItems: "center", gap: "0.2rem", fontSize: "0.78rem", fontWeight: 800 }}>
-                                            <CheckCircle2 size={13} />
-                                            Done
-                                          </span>
-                                        ) : (
-                                          <button
-                                            type="button"
-                                            style={{
-                                              background: "var(--purple)",
-                                              color: "#fff",
-                                              border: "none",
-                                              padding: "0.35rem 0.65rem",
-                                              borderRadius: "0.4rem",
-                                              fontSize: "0.72rem",
-                                              fontWeight: 800,
-                                              cursor: "pointer",
-                                              transition: "opacity 0.2s"
-                                            }}
-                                            onClick={() => markVideoAsWatched(c.id, v.id)}
-                                          >
-                                            Complete
-                                          </button>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
                             </div>
                           </div>
 
-                          {/* As per previous instruction, card footer navigation buttons themselves are disabled */}
-                          <div className="course-card-footer" style={{ display: "flex", flexDirection: "column", gap: "0.5rem", width: "100%" }}>
+                          <div className="course-card-footer">
                             <button
                               className="course-card-btn study"
                               type="button"
-                              disabled
-                              style={{ width: "100%", height: "2.5rem", opacity: 0.6, cursor: "not-allowed" }}
+                              onClick={() => openCourse(c.id)}
                             >
-                              <Play size={14} fill="currentColor" />
-                              View the Videos
-                            </button>
-
-                            <button
-                              className="course-card-btn enroll"
-                              type="button"
-                              onClick={() => {
-                                const quiz = quizzes.find((q) => q.courseId === c.id);
-                                if (!quiz || quiz.questions.length === 0) {
-                                  showToast("No quiz available for this course yet.", "success");
-                                  return;
-                                }
-                                setActiveCourseId(c.id);
-                                startQuiz(c.id);
-                              }}
-                              style={{ width: "100%", height: "2.5rem", background: "var(--panel-soft)", border: "1px solid var(--line)", color: "var(--text)", cursor: "pointer" }}
-                            >
-                              <ClipboardCheck size={14} />
-                              Take Quiz
+                              <Play size={14} />
+                              Open Course
                             </button>
                           </div>
                         </article>
