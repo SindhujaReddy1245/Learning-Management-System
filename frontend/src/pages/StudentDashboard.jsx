@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   BookOpen,
@@ -23,6 +23,7 @@ import {
   FileText,
   Eye,
   Download,
+  FastForward,
 } from "lucide-react";
 import {
   getCourseModules,
@@ -33,6 +34,7 @@ import {
   getModulePdfs,
   getModuleQuiz,
   getModuleQuizAttempts,
+  getModuleVideo,
   submitModuleQuizAttempt,
 } from "../api";
 
@@ -69,11 +71,13 @@ const StudentDashboard = ({
   const [courseSearch, setCourseSearch] = useState("");
   const [courseModules, setCourseModules] = useState({});
   const [modulePdfs, setModulePdfs] = useState({});
+  const [moduleVideos, setModuleVideos] = useState({});
   const [moduleQuizzes, setModuleQuizzes] = useState({});
   const [moduleAttempts, setModuleAttempts] = useState({});
   const [activeModuleId, setActiveModuleId] = useState(null);
   const [activeModuleQuizId, setActiveModuleQuizId] = useState(null);
   const [moduleQuizAnswers, setModuleQuizAnswers] = useState({});
+  const moduleVideoRef = useRef(null);
 
   useEffect(() => {
     setActiveCourseId(routeCourseId || null);
@@ -125,6 +129,14 @@ const StudentDashboard = ({
         .catch(() => {
           setModuleAttempts((prev) => ({ ...prev, [mod.id]: prev[mod.id] || [] }));
         });
+
+      getModuleVideo(mod.id)
+        .then((video) => {
+          setModuleVideos((prev) => ({ ...prev, [mod.id]: video }));
+        })
+        .catch(() => {
+          setModuleVideos((prev) => ({ ...prev, [mod.id]: null }));
+        });
     });
   }, [courseModules, user.email]);
 
@@ -137,11 +149,13 @@ const StudentDashboard = ({
     const watchedCount = courseVideos.filter((video) => watchedVideoIds.has(video.id)).length;
     const modules = courseModules[courseId] || [];
     const modulePdfCount = modules.reduce((count, mod) => count + (modulePdfs[mod.id]?.length || 0), 0);
+    const moduleVideoCount = modules.filter((mod) => moduleVideos[mod.id]).length;
     const viewedModulePdfIds = new Set(studentCourseProgress?.viewedModulePdfs || []);
     const viewedModulePdfCount = modules.reduce(
       (count, mod) => count + (modulePdfs[mod.id] || []).filter((pdf) => viewedModulePdfIds.has(pdf.id)).length,
       0
     );
+    const completedModuleVideoCount = modules.filter((mod) => moduleVideos[mod.id] && watchedVideoIds.has(moduleVideos[mod.id].id)).length;
     const moduleQuizCount = modules.filter((mod) => moduleQuizzes[mod.id]).length;
     const moduleQuizScores = studentCourseProgress?.moduleQuizScores || {};
     const completedModuleQuizCount = modules.filter((mod) => moduleQuizzes[mod.id] && moduleQuizScores[mod.id] !== undefined).length;
@@ -151,10 +165,10 @@ const StudentDashboard = ({
     const quizScore = studentCourseProgress?.quizScore;
     const quizCompleted = quizScore !== null && quizScore !== undefined;
 
-    const totalItems = totalVideos + modulePdfCount + moduleQuizCount + (hasQuiz ? 1 : 0);
+    const totalItems = totalVideos + modulePdfCount + moduleVideoCount + moduleQuizCount + (hasQuiz ? 1 : 0);
     if (totalItems === 0) return 0;
 
-    const completedItems = watchedCount + viewedModulePdfCount + completedModuleQuizCount + (quizCompleted ? 1 : 0);
+    const completedItems = watchedCount + viewedModulePdfCount + completedModuleVideoCount + completedModuleQuizCount + (quizCompleted ? 1 : 0);
     return Math.min(100, Math.max(0, Math.round((completedItems / totalItems) * 100)));
   };
 
@@ -280,9 +294,16 @@ const StudentDashboard = ({
     return pdfs.every((pdf) => viewedPdfs.includes(pdf.id));
   };
 
+  const isModuleVideoCompleted = (courseId, moduleId) => {
+    const video = moduleVideos[moduleId];
+    if (!video) return true;
+    const watchedVideos = progress[user.email]?.[courseId]?.watchedVideos || [];
+    return watchedVideos.includes(video.id);
+  };
+
   const isModuleCompleted = (courseId, moduleId) => {
     const quiz = moduleQuizzes[moduleId];
-    return isModulePdfCompleted(courseId, moduleId) && (!quiz || isModuleQuizCompleted(courseId, moduleId));
+    return isModulePdfCompleted(courseId, moduleId) && isModuleVideoCompleted(courseId, moduleId) && (!quiz || isModuleQuizCompleted(courseId, moduleId));
   };
 
   const markModulePdfViewed = (courseId, pdfId) => {
@@ -310,6 +331,12 @@ const StudentDashboard = ({
         })
       );
     }, 50);
+  };
+
+  const skipModuleVideoForward = () => {
+    if (!moduleVideoRef.current) return;
+    const video = moduleVideoRef.current;
+    video.currentTime = Math.min((video.duration || video.currentTime + 10), video.currentTime + 10);
   };
 
   const startModuleQuiz = (moduleId) => {
@@ -716,6 +743,33 @@ const StudentDashboard = ({
                   {isModuleCompleted(course.id, selectedModule.id) ? (
                     <span className="module-complete-badge"><CheckCircle2 size={15} /> Completed</span>
                   ) : null}
+                </div>
+
+                <div className="course-content-section">
+                  <h4><Play size={16} /> Module Video</h4>
+                  {moduleVideos[selectedModule.id] ? (
+                    <div className="module-video-player">
+                      <video
+                        ref={moduleVideoRef}
+                        src={moduleVideos[selectedModule.id].url}
+                        controls
+                        preload="metadata"
+                        onEnded={() => markVideoAsWatched(course.id, moduleVideos[selectedModule.id].id)}
+                      />
+                      <div className="module-video-actions">
+                        <span>
+                          {isModuleVideoCompleted(course.id, selectedModule.id) ? <CheckCircle2 size={15} /> : <Play size={15} />}
+                          {moduleVideos[selectedModule.id].filename}
+                        </span>
+                        <button className="course-pdf-link" type="button" onClick={skipModuleVideoForward}>
+                          <FastForward size={14} />
+                          10s
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="empty-learning-text">No video for this module yet.</p>
+                  )}
                 </div>
 
                 <div className="course-content-section">

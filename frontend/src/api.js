@@ -100,6 +100,30 @@ export function getModulePdfs(moduleId) {
   return request(`/api/modules/${encodeURIComponent(moduleId)}/pdfs`);
 }
 
+export async function uploadModuleVideo(moduleId, file) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/modules/${encodeURIComponent(moduleId)}/video`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({}));
+    throw new Error(errorBody.detail || `Video upload failed (${response.status})`);
+  }
+
+  return response.json();
+}
+
+export function getModuleVideo(moduleId) {
+  return request(`/api/modules/${encodeURIComponent(moduleId)}/video`);
+}
+
 // Module PDF preview / download helpers
 export function getModulePdfPreviewUrl(moduleId, pdfId) {
   return `${API_BASE_URL}/api/modules/${encodeURIComponent(moduleId)}/pdfs/${encodeURIComponent(pdfId)}/file`;

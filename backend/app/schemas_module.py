@@ -21,6 +21,17 @@ class ModulePdfOut(BaseModel):
     sizeBytes: int
     uploadedAt: str
 
+class ModuleVideoOut(BaseModel):
+    id: str
+    moduleId: str
+    filename: str
+    url: str
+    publicId: str | None = None
+    contentType: str = "video/mp4"
+    sizeBytes: int
+    duration: float | None = None
+    uploadedAt: str
+
 class QuizQuestion(BaseModel):
     question: str
     options: List[str]

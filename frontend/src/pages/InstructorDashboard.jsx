@@ -28,6 +28,8 @@ import {
   createCourseModule,
   uploadModulePdf,
   getModulePdfs,
+  uploadModuleVideo,
+  getModuleVideo,
   createModuleQuiz,
   getModuleQuiz,
   getModulePdfPreviewUrl,
@@ -70,8 +72,10 @@ const InstructorDashboard = ({
   const [newModuleDesc, setNewModuleDesc] = useState("");
   const [newModuleOrder, setNewModuleOrder] = useState(1);
   const [modulePdfs, setModulePdfs] = useState({});
+  const [moduleVideos, setModuleVideos] = useState({});
   const [moduleQuizzes, setModuleQuizzes] = useState({});
   const [uploadingModulePdfId, setUploadingModulePdfId] = useState(null);
+  const [uploadingModuleVideoId, setUploadingModuleVideoId] = useState(null);
   const [activeModuleQuizId, setActiveModuleQuizId] = useState(null);
   const [moduleQuizTitle, setModuleQuizTitle] = useState("");
   const [moduleQuizQuestion, setModuleQuizQuestion] = useState("");
@@ -85,6 +89,9 @@ const InstructorDashboard = ({
   const [newVideoDesc, setNewVideoDesc] = useState("");
   const [newVideoDuration, setNewVideoDuration] = useState("8:00");
   const [newVideoUrl, setNewVideoUrl] = useState("https://www.w3schools.com/html/mov_bbb.mp4");
+  const [newVideoModuleId, setNewVideoModuleId] = useState("");
+  const [newVideoFile, setNewVideoFile] = useState(null);
+  const [addVideoModules, setAddVideoModules] = useState([]);
 
   // Form states - Add Quiz
   const [newQuizCourseId, setNewQuizCourseId] = useState("");
@@ -120,6 +127,33 @@ const InstructorDashboard = ({
   }, [courses]);
 
   useEffect(() => {
+    if (instructorTab !== "add-video" || !newVideoCourseId) {
+      setAddVideoModules([]);
+      return;
+    }
+
+    getCourseModules(newVideoCourseId)
+      .then((mods) => {
+        setAddVideoModules(mods);
+        setNewVideoModuleId((current) => current || mods[0]?.id || "");
+        mods.forEach((mod) => {
+          getModuleVideo(mod.id)
+            .then((video) => {
+              setModuleVideos((prev) => ({ ...prev, [mod.id]: video }));
+            })
+            .catch(() => {
+              setModuleVideos((prev) => ({ ...prev, [mod.id]: null }));
+            });
+        });
+      })
+      .catch((err) => {
+        console.error("Failed to load modules for video upload", err);
+        setAddVideoModules([]);
+        setNewVideoModuleId("");
+      });
+  }, [instructorTab, newVideoCourseId]);
+
+  useEffect(() => {
     if (instructorSelectedCourseId) {
       getCourseModules(instructorSelectedCourseId)
         .then(setModules)
@@ -146,13 +180,21 @@ const InstructorDashboard = ({
         .catch(() => {
           setModuleQuizzes((prev) => ({ ...prev, [mod.id]: null }));
         });
+
+      getModuleVideo(mod.id)
+        .then((video) => {
+          setModuleVideos((prev) => ({ ...prev, [mod.id]: video }));
+        })
+        .catch(() => {
+          setModuleVideos((prev) => ({ ...prev, [mod.id]: null }));
+        });
     });
   }, [modules]);
 
   // Helper stats calculation
   const getInstructorStats = () => {
     const totalCourses = courses.length;
-    const totalVideos = videos.length;
+    const totalVideos = videos.length + Object.values(moduleVideos).filter(Boolean).length;
     const totalQuizzes = quizzes.length;
     const totalEnrolls = enrolledStudents.length;
 
@@ -517,6 +559,51 @@ const InstructorDashboard = ({
     }
   };
 
+  const handleUploadModuleVideo = async (moduleId, file) => {
+    if (!file) return;
+
+    if (!file.type.startsWith("video/")) {
+      showToast("Please upload a video file.", "error");
+      return;
+    }
+
+    try {
+      setUploadingModuleVideoId(moduleId);
+      const savedVideo = await uploadModuleVideo(moduleId, file);
+      setModuleVideos((prev) => ({
+        ...prev,
+        [moduleId]: savedVideo,
+      }));
+      showToast("Module video uploaded successfully!", "success");
+      return savedVideo;
+    } catch (error) {
+      console.error(error);
+      showToast(`Module video upload failed: ${error.message}`, "error");
+      return null;
+    } finally {
+      setUploadingModuleVideoId(null);
+    }
+  };
+
+  const handleAddVideoToModule = async (e) => {
+    e.preventDefault();
+    if (!newVideoCourseId || !newVideoModuleId) {
+      showToast("Select a course and module first", "error");
+      return;
+    }
+    if (!newVideoFile) {
+      showToast("Choose a video file to upload", "error");
+      return;
+    }
+
+    const savedVideo = await handleUploadModuleVideo(newVideoModuleId, newVideoFile);
+    if (savedVideo) {
+      setNewVideoFile(null);
+      setInstructorTab("manage-courses");
+      setInstructorSelectedCourseId(newVideoCourseId);
+    }
+  };
+
   const startModuleQuizEditor = (moduleId) => {
     const existingQuiz = moduleQuizzes[moduleId];
     const firstQuestion = existingQuiz?.questions?.[0];
@@ -657,6 +744,22 @@ const InstructorDashboard = ({
                           event.target.value = "";
                         }}
                       />
+                      <label className="course-pdf-upload-btn" htmlFor={`module-video-${mod.id}`} style={{ width: "fit-content" }}>
+                        <Play size={14} />
+                        {uploadingModuleVideoId === mod.id ? "Uploading..." : moduleVideos[mod.id] ? "Replace Video" : "Upload Video"}
+                      </label>
+                      <input
+                        id={`module-video-${mod.id}`}
+                        type="file"
+                        accept="video/*"
+                        style={{ display: "none" }}
+                        disabled={uploadingModuleVideoId === mod.id}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          handleUploadModuleVideo(mod.id, file);
+                          event.target.value = "";
+                        }}
+                      />
                       <button
                         className="course-pdf-link"
                         type="button"
@@ -682,6 +785,21 @@ const InstructorDashboard = ({
                             </a>
                           </div>
                         ))}
+                      </div>
+                    )}
+
+                    {moduleVideos[mod.id] && (
+                      <div className="module-video-preview">
+                        <div className="module-video-preview-header">
+                          <span>
+                            <Play size={13} />
+                            {moduleVideos[mod.id].filename}
+                          </span>
+                          {moduleVideos[mod.id].duration ? (
+                            <strong>{Math.round(moduleVideos[mod.id].duration)}s</strong>
+                          ) : null}
+                        </div>
+                        <video src={moduleVideos[mod.id].url} controls preload="metadata" />
                       </div>
                     )}
 
@@ -1173,9 +1291,71 @@ const InstructorDashboard = ({
 
         {/* Tab: Add Video */}
         {instructorTab === "add-video" && (
-          <div className="form-dashboard-card" style={{ textAlign: "center", padding: "3rem", color: "var(--muted)", border: "1px dashed var(--line)" }}>
-            Empty
-          </div>
+          <form className="form-dashboard-card" onSubmit={handleAddVideoToModule}>
+            <h3>Upload Module Video</h3>
+            <p>Add an optional video lesson to a specific course module.</p>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="video-course">Course</label>
+              <select
+                id="video-course"
+                className="form-select"
+                value={newVideoCourseId}
+                onChange={(e) => {
+                  setNewVideoCourseId(e.target.value);
+                  setNewVideoModuleId("");
+                }}
+              >
+                <option value="">Select a course</option>
+                {courses.map((c) => (
+                  <option key={c.id} value={c.id}>{c.title}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="video-module">Module</label>
+              <select
+                id="video-module"
+                className="form-select"
+                value={newVideoModuleId}
+                onChange={(e) => setNewVideoModuleId(e.target.value)}
+                disabled={addVideoModules.length === 0}
+              >
+                <option value="">Select a module</option>
+                {addVideoModules.map((mod) => (
+                  <option key={mod.id} value={mod.id}>{mod.title}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="video-file">Video File</label>
+              <input
+                id="video-file"
+                className="form-input"
+                type="file"
+                accept="video/*"
+                onChange={(e) => setNewVideoFile(e.target.files?.[0] || null)}
+              />
+            </div>
+
+            {newVideoModuleId && moduleVideos[newVideoModuleId] && (
+              <div className="module-video-preview">
+                <div className="module-video-preview-header">
+                  <span>
+                    <Play size={13} />
+                    Current video: {moduleVideos[newVideoModuleId].filename}
+                  </span>
+                </div>
+                <video src={moduleVideos[newVideoModuleId].url} controls preload="metadata" />
+              </div>
+            )}
+
+            <button className="form-submit-btn" type="submit" disabled={!!uploadingModuleVideoId || addVideoModules.length === 0}>
+              {uploadingModuleVideoId ? "Uploading..." : "Upload Video"}
+            </button>
+          </form>
         )}
 
         {/* Tab: Add Quiz */}

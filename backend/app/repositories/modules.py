@@ -2,10 +2,11 @@ from uuid import uuid4
 from datetime import datetime, timezone
 
 from app.database import get_database_pool
-from app.schemas_module import ModuleCreate, ModuleOut, ModulePdfOut
+from app.schemas_module import ModuleCreate, ModuleOut, ModulePdfOut, ModuleVideoOut
 
 memory_modules: list[dict] = []
 memory_module_pdfs: list[dict] = []
+memory_module_videos: list[dict] = []
 
 def row_to_module(row) -> ModuleOut:
     row = dict(row)
@@ -30,6 +31,23 @@ def row_to_module_pdf(row) -> ModulePdfOut:
         url=row.get("url"),
         contentType=row.get("content_type") or "application/pdf",
         sizeBytes=row["size_bytes"],
+        uploadedAt=uploaded_at,
+    )
+
+def row_to_module_video(row) -> ModuleVideoOut:
+    row = dict(row)
+    uploaded_at = row["uploaded_at"]
+    if hasattr(uploaded_at, "isoformat"):
+        uploaded_at = uploaded_at.isoformat()
+    return ModuleVideoOut(
+        id=str(row["id"]),
+        moduleId=str(row["module_id"]),
+        filename=row["filename"],
+        url=row["url"],
+        publicId=row.get("public_id"),
+        contentType=row.get("content_type") or "video/mp4",
+        sizeBytes=row["size_bytes"],
+        duration=row.get("duration"),
         uploadedAt=uploaded_at,
     )
 
@@ -161,3 +179,74 @@ async def get_module_pdf_file(module_id: str, pdf_id: str) -> dict | None:
         "file_data": bytes(row["file_data"]) if row.get("file_data") is not None else None,
         "url": row.get("url"),
     }
+
+async def get_module_video(module_id: str) -> ModuleVideoOut | None:
+    pool = get_database_pool()
+    if pool is None:
+        matches = [v for v in memory_module_videos if v["module_id"] == module_id]
+        if not matches:
+            return None
+        latest = sorted(matches, key=lambda item: item["uploaded_at"], reverse=True)[0]
+        return row_to_module_video(latest)
+
+    with pool.connection() as conn:
+        row = conn.execute(
+            """
+            select id, module_id, filename, url, public_id, content_type, size_bytes, duration, uploaded_at
+            from module_videos
+            where module_id = %s
+            order by uploaded_at desc
+            limit 1
+            """,
+            (module_id,),
+        ).fetchone()
+
+    return row_to_module_video(row) if row else None
+
+async def save_module_video(
+    module_id: str,
+    filename: str,
+    url: str,
+    public_id: str | None,
+    content_type: str,
+    size_bytes: int,
+    duration: float | None,
+) -> ModuleVideoOut:
+    pool = get_database_pool()
+    normalized_content_type = content_type or "video/mp4"
+
+    if pool is None:
+        new = {
+            "id": f"mv_{uuid4().hex}",
+            "module_id": module_id,
+            "filename": filename,
+            "url": url,
+            "public_id": public_id,
+            "content_type": normalized_content_type,
+            "size_bytes": size_bytes,
+            "duration": duration,
+            "uploaded_at": datetime.now(timezone.utc),
+        }
+        memory_module_videos[:] = [v for v in memory_module_videos if v["module_id"] != module_id]
+        memory_module_videos.append(new)
+        return row_to_module_video(new)
+
+    with pool.connection() as conn:
+        row = conn.execute(
+            """
+            insert into module_videos (module_id, filename, url, public_id, content_type, size_bytes, duration)
+            values (%s, %s, %s, %s, %s, %s, %s)
+            on conflict (module_id) do update set
+                filename = excluded.filename,
+                url = excluded.url,
+                public_id = excluded.public_id,
+                content_type = excluded.content_type,
+                size_bytes = excluded.size_bytes,
+                duration = excluded.duration,
+                uploaded_at = now()
+            returning id, module_id, filename, url, public_id, content_type, size_bytes, duration, uploaded_at
+            """,
+            (module_id, filename, url, public_id, normalized_content_type, size_bytes, duration),
+        ).fetchone()
+
+    return row_to_module_video(row)

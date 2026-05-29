@@ -7,11 +7,14 @@ from typing import List
 
 from app.repositories.modules import (
     get_module_pdf_file as repo_get_module_pdf_file,
+    get_module_video as repo_get_module_video,
     list_modules,
     create_module,
     list_module_pdfs,
     save_module_pdf,
+    save_module_video,
 )
+from app.cloudinary_client import upload_module_video
 from app.repositories.module_quizzes import (
     get_module_quiz as repo_get_module_quiz,
     save_module_quiz as repo_save_module_quiz,
@@ -24,6 +27,7 @@ from app.schemas_module import (
     ModuleCreate,
     ModuleOut,
     ModulePdfOut,
+    ModuleVideoOut,
     ModuleQuizCreate,
     ModuleQuizOut,
     QuizAttemptCreate,
@@ -74,6 +78,43 @@ async def get_module_pdf_file(module_id: str, pdf_id: str, download: bool = Fals
         headers={
             "Content-Disposition": f"{disposition}; filename*=UTF-8''{safe_filename}",
         },
+    )
+
+# Module video endpoint. A module can have no video; uploading replaces the latest video.
+@router.get("/modules/{module_id}/video", response_model=ModuleVideoOut)
+async def get_module_video(module_id: str) -> ModuleVideoOut:
+    video = await repo_get_module_video(module_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="Video not found for this module")
+    return video
+
+@router.post("/modules/{module_id}/video", response_model=ModuleVideoOut, status_code=201)
+async def post_module_video(module_id: str, file: UploadFile = File(...)) -> ModuleVideoOut:
+    if not file.content_type or not file.content_type.startswith("video/"):
+        raise HTTPException(status_code=400, detail="Only video files are allowed")
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Video file is empty")
+
+    filename = file.filename or "module-video.mp4"
+    try:
+        upload_result = upload_module_video(BytesIO(file_bytes), filename)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Cloudinary upload failed: {exc}") from exc
+
+    url = upload_result.get("secure_url") or upload_result.get("url")
+    if not url:
+        raise HTTPException(status_code=502, detail="Cloudinary did not return a video URL")
+
+    return await save_module_video(
+        module_id=module_id,
+        filename=filename,
+        url=url,
+        public_id=upload_result.get("public_id"),
+        content_type=file.content_type,
+        size_bytes=len(file_bytes),
+        duration=upload_result.get("duration"),
     )
 
 # Module specific quizzes
