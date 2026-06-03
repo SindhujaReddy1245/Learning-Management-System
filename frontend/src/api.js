@@ -6,17 +6,26 @@ const API_BASE_URL = (
 
 async function request(path, options = {}) {
   const url = `${API_BASE_URL}${path}`;
+  const { timeoutMs = 15000, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
   const response = await fetch(url, {
     headers: {
       "Content-Type": "application/json",
-      ...(options.headers || {}),
+      ...(fetchOptions.headers || {}),
     },
-    ...options,
-  });
+    ...fetchOptions,
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timeoutId));
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
     throw new Error(errorBody.detail || `API request failed (${response.status})`);
+  }
+
+  if (response.status === 204) {
+    return null;
   }
 
   return response.json();
@@ -165,5 +174,42 @@ export function saveCourseQuiz(courseId, quiz) {
   return request(`/api/courses/${encodeURIComponent(courseId)}/quizzes`, {
     method: "POST",
     body: JSON.stringify(quiz),
+  });
+}
+
+export function createStudentInvite(student) {
+  return request("/api/students/invite", {
+    method: "POST",
+    body: JSON.stringify(student),
+    timeoutMs: 10000,
+  });
+}
+
+export function loginInvitedStudent(credentials) {
+  return request("/api/students/login", {
+    method: "POST",
+    body: JSON.stringify(credentials),
+  });
+}
+
+export function deleteStudent(studentRef) {
+  return request(`/api/students/${encodeURIComponent(studentRef)}`, {
+    method: "DELETE",
+  });
+}
+
+export function generateCertificate(certificate) {
+  return request("/api/certificates", {
+    method: "POST",
+    body: JSON.stringify(certificate),
+    timeoutMs: 30000,
+  }).then((savedCertificate) => {
+    if (savedCertificate?.url?.startsWith("/")) {
+      return {
+        ...savedCertificate,
+        url: `${API_BASE_URL}${savedCertificate.url}`,
+      };
+    }
+    return savedCertificate;
   });
 }

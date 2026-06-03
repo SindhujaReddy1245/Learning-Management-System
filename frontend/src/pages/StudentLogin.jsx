@@ -9,6 +9,7 @@ import { doc, getDoc, collection, query, where, getDocs, setDoc } from "firebase
 import { ArrowLeft, LogIn, Sparkles, Zap, GraduationCap } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { auth, db, provider } from "../firebaseConfig";
+import { loginInvitedStudent } from "../api";
 
 const StudentLogin = ({ setUser, showToast }) => {
   const [email, setEmail] = useState("");
@@ -41,7 +42,7 @@ const StudentLogin = ({ setUser, showToast }) => {
       if (docSnap.exists()) {
         const role = docSnap.data().role;
         if (role === "student") {
-          setUser({ uid, email: docSnap.data().email, role: "student" });
+          setUser({ uid, name: docSnap.data().name, email: docSnap.data().email, role: "student" });
           showToast("Logged in successfully as Student!", "success");
           navigate("/student-dashboard");
         } else {
@@ -70,7 +71,7 @@ const StudentLogin = ({ setUser, showToast }) => {
               role: matchedData.role,
             });
 
-            setUser({ uid, email: matchedData.email, role: "student" });
+            setUser({ uid, name: matchedData.name, email: matchedData.email, role: "student" });
             showToast("Logged in successfully (Account automatically linked)!", "success");
             navigate("/student-dashboard");
             return;
@@ -103,12 +104,39 @@ const StudentLogin = ({ setUser, showToast }) => {
 
   const handleLocalRoleCheck = (localUser) => {
     if (localUser.role === "student") {
-      setUser({ uid: localUser.uid, email: localUser.email, role: "student" });
+      setUser({ uid: localUser.uid, name: localUser.name, email: localUser.email, role: "student" });
       showToast("Logged in successfully (Offline Local Cache)!", "success");
       navigate("/student-dashboard");
     } else {
       setError("This is the Student Login Portal. Instructors, please use the Instructor Portal.");
     }
+  };
+
+  const loginWithInvitedCredentials = async (emailValue, passwordValue) => {
+    try {
+      const invitedStudent = await loginInvitedStudent({
+        email: emailValue,
+        password: passwordValue,
+      });
+      setUser({ uid: invitedStudent.uid, name: invitedStudent.name, email: invitedStudent.email, role: "student" });
+      showToast("Logged in successfully as invited student!", "success");
+      navigate("/student-dashboard");
+      return true;
+    } catch (backendError) {
+      console.warn("Invited student backend login failed:", backendError);
+    }
+
+    const localUsers = JSON.parse(localStorage.getItem("local_users") || "[]");
+    const localUser = localUsers.find(
+      (u) => u.email?.toLowerCase() === emailValue && u.password === passwordValue
+    );
+
+    if (localUser) {
+      handleLocalRoleCheck(localUser);
+      return true;
+    }
+
+    return false;
   };
 
   useEffect(() => {
@@ -145,7 +173,10 @@ const StudentLogin = ({ setUser, showToast }) => {
       await loadRoleAndNavigate(result.user.uid, emailValue);
     } catch (err) {
       console.error(err);
-      setError(`${err.code || "auth/error"}: Check your email and password, then try again.`);
+      const invitedLoginWorked = await loginWithInvitedCredentials(emailValue, password);
+      if (!invitedLoginWorked) {
+        setError(`${err.code || "auth/error"}: Check your email and password, then try again.`);
+      }
     } finally {
       setLoading(false);
     }

@@ -26,9 +26,10 @@ async def connect_database() -> None:
 
     database_pool = ConnectionPool(
         database_url,
-        kwargs={"row_factory": dict_row},
+        kwargs={"row_factory": dict_row, "connect_timeout": 5},
         min_size=0,
         max_size=2,
+        timeout=5,
         open=True,
     )
 

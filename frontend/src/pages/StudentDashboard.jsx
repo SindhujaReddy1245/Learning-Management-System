@@ -35,6 +35,7 @@ import {
   getModuleQuiz,
   getModuleQuizAttempts,
   getModuleVideo,
+  generateCertificate,
   submitModuleQuizAttempt,
 } from "../api";
 
@@ -77,6 +78,8 @@ const StudentDashboard = ({
   const [activeModuleId, setActiveModuleId] = useState(null);
   const [activeModuleQuizId, setActiveModuleQuizId] = useState(null);
   const [moduleQuizAnswers, setModuleQuizAnswers] = useState({});
+  const [certificates, setCertificates] = useState({});
+  const [generatingCertificateCourseId, setGeneratingCertificateCourseId] = useState(null);
   const moduleVideoRef = useRef(null);
 
   useEffect(() => {
@@ -306,6 +309,11 @@ const StudentDashboard = ({
     return isModulePdfCompleted(courseId, moduleId) && isModuleVideoCompleted(courseId, moduleId) && (!quiz || isModuleQuizCompleted(courseId, moduleId));
   };
 
+  const areAllCourseModulesCompleted = (courseId) => {
+    const modules = courseModules[courseId] || [];
+    return modules.length > 0 && modules.every((mod) => isModuleCompleted(courseId, mod.id));
+  };
+
   const markModulePdfViewed = (courseId, pdfId) => {
     setProgress((prev) => {
       const copy = { ...prev };
@@ -339,10 +347,14 @@ const StudentDashboard = ({
     video.currentTime = Math.min((video.duration || video.currentTime + 10), video.currentTime + 10);
   };
 
-  const startModuleQuiz = (moduleId) => {
+  const startModuleQuiz = (courseId, moduleId) => {
     const quiz = moduleQuizzes[moduleId];
     if (!quiz || quiz.questions.length === 0) {
       showToast("No quiz available for this module yet.", "error");
+      return;
+    }
+    if (!isModulePdfCompleted(courseId, moduleId) || !isModuleVideoCompleted(courseId, moduleId)) {
+      showToast("View this module PDF and complete its video before taking the module quiz.", "error");
       return;
     }
     setActiveModuleQuizId(moduleId);
@@ -407,6 +419,10 @@ const StudentDashboard = ({
       showToast("No quiz available for this course yet.", "success");
       return;
     }
+    if (!areAllCourseModulesCompleted(courseId)) {
+      showToast("Complete every module first. The course quiz opens after all module tick marks are done.", "error");
+      return;
+    }
     setQuizAnswers({});
     setCurrentQuizQuestion(0);
     setQuizActive(true);
@@ -420,9 +436,14 @@ const StudentDashboard = ({
     }));
   };
 
-  const finishQuiz = (courseId) => {
+  const finishQuiz = async (courseId) => {
     const quiz = quizzes.find((q) => q.courseId === courseId);
     if (!quiz) return;
+
+    if (quiz.questions.some((_, index) => quizAnswers[index] === undefined)) {
+      showToast("Please answer every course quiz question.", "error");
+      return;
+    }
 
     let score = 0;
     quiz.questions.forEach((q, idx) => {
@@ -453,7 +474,29 @@ const StudentDashboard = ({
     }, 50);
 
     setQuizFinished(true);
-    showToast(`Quiz completed! You scored ${score} out of ${quiz.questions.length}`, "success");
+    if (score === quiz.questions.length) {
+      try {
+        setGeneratingCertificateCourseId(courseId);
+        const enrolledStudent = enrolledStudents.find(
+          (student) => student.email?.toLowerCase() === user.email?.toLowerCase() && student.courseId === courseId
+        );
+        const certificate = await generateCertificate({
+          student_id: user.email,
+          student_name: user.name || enrolledStudent?.name || user.email?.split("@")[0] || "Student",
+          student_email: user.email,
+          course_id: courseId,
+        });
+        setCertificates((prev) => ({ ...prev, [courseId]: certificate }));
+        showToast("Perfect score! Your course completion certificate is ready.", "success");
+      } catch (error) {
+        console.error(error);
+        showToast(`Perfect score, but certificate generation failed: ${error.message}`, "error");
+      } finally {
+        setGeneratingCertificateCourseId(null);
+      }
+    } else {
+      showToast(`Quiz completed! You scored ${score} out of ${quiz.questions.length}`, "success");
+    }
   };
 
   const renderHeader = () => {
@@ -510,6 +553,15 @@ const StudentDashboard = ({
             <p className="quiz-results-text">
               Great effort! Your score has been submitted, recorded, and added to your total course completion rate.
             </p>
+            {generatingCertificateCourseId === activeCourseId ? (
+              <p className="quiz-results-text">Generating certificate...</p>
+            ) : null}
+            {certificates[activeCourseId]?.url ? (
+              <a className="course-pdf-link" href={certificates[activeCourseId].url} target="_blank" rel="noreferrer" style={{ margin: "0 auto 1rem", width: "fit-content" }}>
+                <Award size={14} />
+                View / Download Certificate
+              </a>
+            ) : null}
             <div style={{ display: "flex", gap: "1rem", justifyContent: "center" }}>
               <button
                 className="submit-btn"
@@ -724,10 +776,30 @@ const StudentDashboard = ({
                     {quizActive ? (
                       renderQuizSolver(courseQuiz)
                     ) : (
-                      <button className="course-card-btn enroll compact-action" type="button" onClick={() => startQuiz(course.id)}>
-                        <ClipboardCheck size={15} />
-                        {progress[user.email]?.[course.id]?.quizScore !== null && progress[user.email]?.[course.id]?.quizScore !== undefined ? "Retake Course Quiz" : "Take Course Quiz"}
-                      </button>
+                      <>
+                        {!areAllCourseModulesCompleted(course.id) ? (
+                          <p className="empty-learning-text">Complete every module PDF, video, and module quiz to unlock the course quiz.</p>
+                        ) : null}
+                        <button
+                          className="course-card-btn enroll compact-action"
+                          type="button"
+                          onClick={() => startQuiz(course.id)}
+                          disabled={!areAllCourseModulesCompleted(course.id)}
+                          style={{ opacity: areAllCourseModulesCompleted(course.id) ? 1 : 0.55 }}
+                        >
+                          <ClipboardCheck size={15} />
+                          {progress[user.email]?.[course.id]?.quizScore !== null && progress[user.email]?.[course.id]?.quizScore !== undefined ? "Retake Course Quiz" : "Take Course Quiz"}
+                        </button>
+                        {generatingCertificateCourseId === course.id ? (
+                          <p className="empty-learning-text">Generating certificate...</p>
+                        ) : null}
+                        {certificates[course.id]?.url ? (
+                          <a className="course-pdf-link" href={certificates[course.id].url} target="_blank" rel="noreferrer" style={{ marginTop: "0.75rem", width: "fit-content" }}>
+                            <Award size={14} />
+                            View / Download Certificate
+                          </a>
+                        ) : null}
+                      </>
                     )}
                   </div>
                 ) : null}
@@ -848,7 +920,7 @@ const StudentDashboard = ({
                             Quiz completed
                           </span>
                         ) : null}
-                        <button className="course-card-btn enroll compact-action" type="button" onClick={() => startModuleQuiz(selectedModule.id)}>
+                        <button className="course-card-btn enroll compact-action" type="button" onClick={() => startModuleQuiz(course.id, selectedModule.id)}>
                           <ClipboardCheck size={15} />
                           {isModuleQuizCompleted(course.id, selectedModule.id) ? "Retake Module Quiz" : "Take Module Quiz"}
                         </button>

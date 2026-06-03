@@ -4,6 +4,7 @@ import {
   ClipboardCheck,
   Play,
   Users,
+  UserPlus,
   Tv,
   ChevronLeft,
   ChevronRight,
@@ -17,6 +18,9 @@ import {
   FileText,
   Eye,
   Upload,
+  Mail,
+  KeyRound,
+  Trash2,
 } from "lucide-react";
 import {
   createCourse,
@@ -33,6 +37,8 @@ import {
   createModuleQuiz,
   getModuleQuiz,
   getModulePdfPreviewUrl,
+  createStudentInvite,
+  deleteStudent,
 } from "../api";
 
 const InstructorDashboard = ({
@@ -82,6 +88,15 @@ const InstructorDashboard = ({
   const [moduleQuizOptions, setModuleQuizOptions] = useState(["", "", "", ""]);
   const [moduleQuizCorrect, setModuleQuizCorrect] = useState(0);
   const [newModuleCourseId, setNewModuleCourseId] = useState("");
+
+  // Form states - Add Students
+  const [newStudentName, setNewStudentName] = useState("");
+  const [newStudentCollege, setNewStudentCollege] = useState("");
+  const [newStudentEmail, setNewStudentEmail] = useState("");
+  const [newStudentCourseId, setNewStudentCourseId] = useState("");
+  const [isInvitingStudent, setIsInvitingStudent] = useState(false);
+  const [lastStudentInvite, setLastStudentInvite] = useState(null);
+  const [deletingStudentRef, setDeletingStudentRef] = useState(null);
 
   // Form states - Add Video
   const [newVideoCourseId, setNewVideoCourseId] = useState("");
@@ -242,6 +257,121 @@ const InstructorDashboard = ({
     } catch (err) {
       console.error(err);
       showToast(err.message || "Failed to create module", "error");
+    }
+  };
+
+  const generateLocalStudentPassword = () => {
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    return Array.from({ length: 12 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
+  };
+
+  const saveInvitedStudentLocally = (student, password) => {
+    const localUsers = JSON.parse(localStorage.getItem("local_users") || "[]");
+    const existingIndex = localUsers.findIndex((u) => u.email?.toLowerCase() === student.email.toLowerCase());
+    const localProfile = {
+      uid: student.id || `s_${Date.now()}`,
+      name: student.name,
+      college: student.college,
+      email: student.email.toLowerCase(),
+      role: "student",
+      password,
+    };
+
+    if (existingIndex >= 0) {
+      localUsers[existingIndex] = { ...localUsers[existingIndex], ...localProfile };
+    } else {
+      localUsers.push(localProfile);
+    }
+
+    localStorage.setItem("local_users", JSON.stringify(localUsers));
+  };
+
+  const handleAddStudentInvite = async (event) => {
+    event.preventDefault();
+
+    const studentName = newStudentName.trim();
+    const studentCollege = newStudentCollege.trim();
+    const studentEmail = newStudentEmail.trim().toLowerCase();
+
+    if (!studentName || !studentCollege || !studentEmail) {
+      showToast("Please fill student name, college, and email", "error");
+      return;
+    }
+
+    const selectedCourseId = newStudentCourseId || courses[0]?.id || "";
+    const payload = {
+      name: studentName,
+      college: studentCollege,
+      email: studentEmail,
+      courseId: selectedCourseId || null,
+      instructorId: user.uid,
+      instructorEmail: user.email,
+    };
+
+    setIsInvitingStudent(true);
+    setLastStudentInvite(null);
+
+    try {
+      const invited = await createStudentInvite(payload);
+      saveInvitedStudentLocally(invited, invited.generatedPassword);
+      setLastStudentInvite(invited);
+      setEnrolledStudents((prev) => {
+        const withoutDuplicate = prev.filter(
+          (student) => !(student.email?.toLowerCase() === invited.email && student.courseId === invited.courseId)
+        );
+        return [
+          {
+            id: invited.id,
+            name: invited.name,
+            college: invited.college,
+            email: invited.email,
+            courseId: invited.courseId || selectedCourseId,
+            progress: 0,
+          },
+          ...withoutDuplicate,
+        ];
+      });
+
+      showToast(
+        invited.emailSent
+          ? "Student added and login email sent"
+          : "Student added. Configure SMTP to send the email automatically.",
+        "success"
+      );
+
+      setNewStudentName("");
+      setNewStudentCollege("");
+      setNewStudentEmail("");
+      setNewStudentCourseId("");
+    } catch (error) {
+      console.error(error);
+      const password = generateLocalStudentPassword();
+      const localInvite = {
+        id: `s_${Date.now()}`,
+        ...payload,
+        role: "student",
+        emailSent: false,
+        generatedPassword: password,
+      };
+
+      saveInvitedStudentLocally(localInvite, password);
+      setLastStudentInvite(localInvite);
+      setEnrolledStudents((prev) => [
+        {
+          id: localInvite.id,
+          name: localInvite.name,
+          college: localInvite.college,
+          email: localInvite.email,
+          courseId: localInvite.courseId || selectedCourseId,
+          progress: 0,
+        },
+        ...prev.filter(
+          (student) => !(student.email?.toLowerCase() === localInvite.email && student.courseId === localInvite.courseId)
+        ),
+      ]);
+      showToast("Backend unavailable. Student saved locally; email was not sent.", "success");
+    } finally {
+      setIsInvitingStudent(false);
     }
   };
 
@@ -601,6 +731,46 @@ const InstructorDashboard = ({
       setNewVideoFile(null);
       setInstructorTab("manage-courses");
       setInstructorSelectedCourseId(newVideoCourseId);
+    }
+  };
+
+  const handleDeleteStudent = async (student) => {
+    const studentRef = student.id || student.uid || student.email;
+    if (!studentRef) {
+      showToast("Cannot delete this student because no student id or email is available.", "error");
+      return;
+    }
+
+    setDeletingStudentRef(studentRef);
+    try {
+      await deleteStudent(studentRef);
+      setEnrolledStudents((prev) =>
+        prev.filter((item) => {
+          const sameStudent =
+            (student.id && item.id === student.id) ||
+            item.uid === student.uid ||
+            item.email?.toLowerCase() === student.email?.toLowerCase();
+          return !(sameStudent && item.courseId === student.courseId);
+        })
+      );
+      const localUsers = JSON.parse(localStorage.getItem("local_users") || "[]");
+      localStorage.setItem(
+        "local_users",
+        JSON.stringify(
+          localUsers.filter(
+            (item) =>
+              item.uid !== student.id &&
+              item.uid !== student.uid &&
+              item.email?.toLowerCase() !== student.email?.toLowerCase()
+          )
+        )
+      );
+      showToast("Student deleted from database.", "success");
+    } catch (error) {
+      console.error(error);
+      showToast(`Student delete failed: ${error.message}`, "error");
+    } finally {
+      setDeletingStudentRef(null);
     }
   };
 
@@ -1042,6 +1212,14 @@ const InstructorDashboard = ({
               <Users size={16} />
               Enrolled Students
             </button>
+
+            <button
+              className={`dashboard-tab-btn ${instructorTab === "add-students" ? "active" : ""}`}
+              onClick={() => setInstructorTab("add-students")}
+            >
+              <UserPlus size={16} />
+              Add Students
+            </button>
           </div>
         </div>
 
@@ -1358,6 +1536,96 @@ const InstructorDashboard = ({
           </form>
         )}
 
+        {/* Tab: Add Students */}
+        {instructorTab === "add-students" && (
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: "1.25rem" }}>
+            <form className="form-dashboard-card" onSubmit={handleAddStudentInvite}>
+              <h3>Add Students</h3>
+              <p>Create a student dashboard login and send the generated password by email.</p>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="student-name">Student Name</label>
+                <input
+                  id="student-name"
+                  className="form-input"
+                  value={newStudentName}
+                  onChange={(event) => setNewStudentName(event.target.value)}
+                  placeholder="Example: Ananya Sharma"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="student-college">College</label>
+                <input
+                  id="student-college"
+                  className="form-input"
+                  value={newStudentCollege}
+                  onChange={(event) => setNewStudentCollege(event.target.value)}
+                  placeholder="Example: ABC Engineering College"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="student-email">Email Address</label>
+                <input
+                  id="student-email"
+                  className="form-input"
+                  type="email"
+                  value={newStudentEmail}
+                  onChange={(event) => setNewStudentEmail(event.target.value)}
+                  placeholder="student@example.com"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="student-course">Course</label>
+                <select
+                  id="student-course"
+                  className="form-select"
+                  value={newStudentCourseId}
+                  onChange={(event) => setNewStudentCourseId(event.target.value)}
+                >
+                  <option value="">Assign first available course</option>
+                  {courses.map((course) => (
+                    <option key={course.id} value={course.id}>{course.title}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button className="submit-btn" type="submit" disabled={isInvitingStudent}>
+                <Mail size={17} />
+                {isInvitingStudent ? "Saving..." : "Save Student"}
+              </button>
+            </form>
+
+            {lastStudentInvite && (
+              <div className="enrolled-students-card" style={{ maxWidth: "38rem", margin: "0 auto", width: "100%" }}>
+                <h3>Latest Student Login</h3>
+                <div className="instructor-detail-list">
+                  <div className="instructor-detail-item">
+                    <span>Email</span>
+                    <strong>{lastStudentInvite.email}</strong>
+                  </div>
+                  <div className="instructor-detail-item">
+                    <span>Password</span>
+                    <strong style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+                      <KeyRound size={14} />
+                      {lastStudentInvite.generatedPassword}
+                    </strong>
+                  </div>
+                  <div className="instructor-detail-item">
+                    <span>Email Status</span>
+                    <strong>{lastStudentInvite.emailSent ? "Sent" : "Not sent"}</strong>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Tab: Add Quiz */}
         {instructorTab === "add-quiz" && (
           <div style={{ width: "100%" }}>
@@ -1514,8 +1782,81 @@ const InstructorDashboard = ({
 
         {/* Tab: Enrolled Students List */}
         {instructorTab === "students" && (
-          <div className="enrolled-students-card" style={{ textAlign: "center", padding: "3rem", color: "var(--muted)", border: "1px dashed var(--line)" }}>
-            Empty
+          <div className="enrolled-students-card">
+            <div className="catalog-toolbar">
+              <div>
+                <h3>Enrolled Students</h3>
+                <span>{enrolledStudents.length} students in your learner list</span>
+              </div>
+              <button
+                className="course-pdf-upload-btn"
+                type="button"
+                onClick={() => setInstructorTab("add-students")}
+              >
+                <UserPlus size={15} />
+                Add Students
+              </button>
+            </div>
+
+            {enrolledStudents.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "2.5rem", color: "var(--muted)", border: "1px dashed var(--line)", borderRadius: "0.8rem" }}>
+                No students added yet.
+              </div>
+            ) : (
+              <div className="table-responsive">
+                <table className="lms-table">
+                  <thead>
+                    <tr>
+                      <th>Student</th>
+                      <th>College</th>
+                      <th>Course</th>
+                      <th>Progress</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {enrolledStudents.map((student, index) => {
+                      const course = courses.find((c) => c.id === student.courseId);
+                      return (
+                        <tr key={`${student.email}-${student.courseId || "none"}-${index}`}>
+                          <td>
+                            <div className="student-row-info">
+                              <div className="student-small-avatar">
+                                {(student.name || student.email || "S").slice(0, 1).toUpperCase()}
+                              </div>
+                              <div className="student-row-details">
+                                <strong>{student.name}</strong>
+                                <span>{student.email}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td>{student.college || "Not added"}</td>
+                          <td>{course?.title || student.courseId || "Not assigned"}</td>
+                          <td>
+                            <div className="progress-track-lms">
+                              <div className="progress-fill-lms" style={{ width: `${student.progress || 0}%` }}></div>
+                            </div>
+                            <span className="progress-cell-text">{student.progress || 0}%</span>
+                          </td>
+                          <td>
+                            <button
+                              className="course-pdf-link"
+                              type="button"
+                              onClick={() => handleDeleteStudent(student)}
+                              disabled={deletingStudentRef === (student.id || student.uid || student.email)}
+                              style={{ color: "#ef4444" }}
+                            >
+                              <Trash2 size={14} />
+                              {deletingStudentRef === (student.id || student.uid || student.email) ? "Deleting..." : "Delete"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>

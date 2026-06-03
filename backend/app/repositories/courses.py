@@ -116,3 +116,22 @@ async def create_course(course: CourseCreate) -> CourseOut:
         ).fetchone()
 
     return row_to_course(row)
+
+
+async def get_course_by_id(course_id: str) -> CourseOut | None:
+    pool = get_database_pool()
+
+    if pool is None:
+        return next((course for course in memory_courses if course.id == course_id), None)
+
+    with pool.connection() as connection:
+        row = connection.execute(
+            """
+            select *
+            from courses
+            where id = %s
+            """,
+            (course_id,),
+        ).fetchone()
+
+    return row_to_course(row) if row else None
